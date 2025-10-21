@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trash2Icon, CheckCircleIcon, AlertCircleIcon, AlertTriangleIcon, SearchIcon, EditIcon, TrashIcon, XIcon } from './Icons';
+import { Trash2Icon, CheckCircleIcon, AlertCircleIcon, AlertTriangleIcon, SearchIcon, EditIcon, TrashIcon, XIcon, BatteryIcon } from './Icons';
 
 // TypeScript declarations for CDN libraries
 declare const L: any;
@@ -12,30 +12,37 @@ interface Bin {
   location: string;
   status: BinStatus;
   fillLevel: number;
+  batteryLevel: number;
   lastEmptied: string;
   coords: [number, number];
 }
 
 // --- MOCK DATA & CONFIG ---
 const BINS_DATA: Bin[] = [
-  { id: 'SB-001', location: 'Main Entrance', status: 'Critical', fillLevel: 95, lastEmptied: '2 days ago', coords: [51.505, -0.09] },
-  { id: 'SB-002', location: 'Cafeteria', status: 'Warning', fillLevel: 78, lastEmptied: '1 day ago', coords: [51.51, -0.1] },
-  { id: 'SB-003', location: 'Office Area', status: 'Normal', fillLevel: 42, lastEmptied: '4 hours ago', coords: [51.515, -0.12] },
-  { id: 'SB-004', location: 'Floor 2, West Wing', status: 'Normal', fillLevel: 35, lastEmptied: '8 hours ago', coords: [51.52, -0.11]},
-  { id: 'SB-005', location: 'Parking Garage P1', status: 'Operational', fillLevel: 15, lastEmptied: '3 hours ago', coords: [51.50, -0.115]},
+  { id: 'SB-001', location: 'Main Entrance', status: 'Critical', fillLevel: 95, batteryLevel: 15, lastEmptied: '2 days ago', coords: [51.505, -0.09] },
+  { id: 'SB-002', location: 'Cafeteria', status: 'Warning', fillLevel: 78, batteryLevel: 45, lastEmptied: '1 day ago', coords: [51.51, -0.1] },
+  { id: 'SB-003', location: 'Office Area', status: 'Normal', fillLevel: 42, batteryLevel: 88, lastEmptied: '4 hours ago', coords: [51.515, -0.12] },
+  { id: 'SB-004', location: 'Floor 2, West Wing', status: 'Normal', fillLevel: 35, batteryLevel: 95, lastEmptied: '8 hours ago', coords: [51.52, -0.11]},
+  { id: 'SB-005', location: 'Parking Garage P1', status: 'Operational', fillLevel: 15, batteryLevel: 100, lastEmptied: '3 hours ago', coords: [51.50, -0.115]},
 ];
 
-const STATUS_CONFIG = {
-  Total: { icon: <Trash2Icon className="w-5 h-5"/>, color: 'gray', count: BINS_DATA.length },
-  Operational: { icon: <CheckCircleIcon className="w-5 h-5"/>, color: 'green', count: BINS_DATA.filter(b => b.status === 'Operational' || b.status === 'Normal').length },
-  'Needs Attention': { icon: <AlertCircleIcon className="w-5 h-5"/>, color: 'orange', count: BINS_DATA.filter(b => b.status === 'Warning').length },
-  Critical: { icon: <AlertTriangleIcon className="w-5 h-5"/>, color: 'red', count: BINS_DATA.filter(b => b.status === 'Critical').length },
+const STATUS_CONFIG_BASE = {
+  Total: { icon: <Trash2Icon className="w-5 h-5"/>, color: 'gray' },
+  Operational: { icon: <CheckCircleIcon className="w-5 h-5"/>, color: 'green' },
+  'Needs Attention': { icon: <AlertCircleIcon className="w-5 h-5"/>, color: 'orange' },
+  Critical: { icon: <AlertTriangleIcon className="w-5 h-5"/>, color: 'red' },
+};
+
+const getBatteryStyle = (level: number) => {
+    if (level < 20) return { color: 'text-red-600' };
+    if (level < 50) return { color: 'text-orange-600' };
+    return { color: 'text-green-600' };
 };
 
 // --- SUB-COMPONENTS ---
 
-const StatusCard: React.FC<{ title: string }> = ({ title }) => {
-    const config = STATUS_CONFIG[title as keyof typeof STATUS_CONFIG];
+const StatusCard: React.FC<{ title: string; count: number }> = ({ title, count }) => {
+    const config = STATUS_CONFIG_BASE[title as keyof typeof STATUS_CONFIG_BASE];
     if (!config) return null;
 
     const colors = {
@@ -51,7 +58,7 @@ const StatusCard: React.FC<{ title: string }> = ({ title }) => {
             <div className="flex justify-between">
                 <div>
                     <p className={`text-sm font-medium ${C.text}`}>{title}</p>
-                    <h3 className="text-2xl font-bold text-gray-800">{config.count}</h3>
+                    <h3 className="text-2xl font-bold text-gray-800">{count}</h3>
                 </div>
                 <div className={`p-3 rounded-full ${C.iconBg} ${C.iconText}`}>
                     {config.icon}
@@ -61,7 +68,7 @@ const StatusCard: React.FC<{ title: string }> = ({ title }) => {
     );
 };
 
-const BinTableRow: React.FC<{ bin: Bin, onRowClick: (bin: Bin) => void }> = ({ bin, onRowClick }) => {
+const BinTableRow: React.FC<{ bin: Bin; onRowClick: (bin: Bin) => void; onDeleteRequest: (bin: Bin) => void; }> = ({ bin, onRowClick, onDeleteRequest }) => {
     const statusStyles: Record<BinStatus, string> = {
         Critical: 'bg-red-100 text-red-800',
         Warning: 'bg-orange-100 text-orange-800',
@@ -74,6 +81,7 @@ const BinTableRow: React.FC<{ bin: Bin, onRowClick: (bin: Bin) => void }> = ({ b
         Normal: 'bg-green-500',
         Operational: 'bg-green-500'
     };
+    const batteryStyle = getBatteryStyle(bin.batteryLevel);
 
     return (
         <tr className="hover:bg-gray-50 cursor-pointer" onClick={() => onRowClick(bin)}>
@@ -103,12 +111,18 @@ const BinTableRow: React.FC<{ bin: Bin, onRowClick: (bin: Bin) => void }> = ({ b
                     <span className="ml-2 text-sm text-gray-500">{bin.fillLevel}%</span>
                 </div>
             </td>
+            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                <div className={`flex items-center ${batteryStyle.color}`}>
+                    <BatteryIcon className="w-4 h-4 mr-2" />
+                    <span>{bin.batteryLevel}%</span>
+                </div>
+            </td>
             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{bin.lastEmptied}</td>
             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                 <button className="text-amber-600 hover:text-amber-900 mr-4" onClick={(e) => { e.stopPropagation(); alert(`Editing ${bin.id}`); }}>
                     <EditIcon className="w-4 h-4" />
                 </button>
-                <button className="text-red-600 hover:text-red-900" onClick={(e) => { e.stopPropagation(); alert(`Deleting ${bin.id}`); }}>
+                <button className="text-red-600 hover:text-red-900" onClick={(e) => { e.stopPropagation(); onDeleteRequest(bin); }}>
                     <TrashIcon className="w-4 h-4" />
                 </button>
             </td>
@@ -116,7 +130,7 @@ const BinTableRow: React.FC<{ bin: Bin, onRowClick: (bin: Bin) => void }> = ({ b
     );
 };
 
-const Charts: React.FC = () => {
+const Charts: React.FC<{bins: Bin[]}> = ({ bins }) => {
     const weeklyChartRef = useRef<HTMLCanvasElement>(null);
     const statusChartRef = useRef<HTMLCanvasElement>(null);
 
@@ -129,8 +143,11 @@ const Charts: React.FC = () => {
             });
         }
         if (statusChartRef.current) {
+            const opCount = bins.filter(b => b.status === 'Operational' || b.status === 'Normal').length;
+            const warnCount = bins.filter(b => b.status === 'Warning').length;
+            const critCount = bins.filter(b => b.status === 'Critical').length;
             statusChart = new Chart(statusChartRef.current, {
-                type: 'doughnut', data: { labels: ['Operational', 'Warning', 'Critical'], datasets: [{ data: [STATUS_CONFIG.Operational.count, STATUS_CONFIG['Needs Attention'].count, STATUS_CONFIG.Critical.count], backgroundColor: ['#22c55e', '#f97316', '#ef4444'], borderWidth: 0 }] },
+                type: 'doughnut', data: { labels: ['Operational', 'Warning', 'Critical'], datasets: [{ data: [opCount, warnCount, critCount], backgroundColor: ['#22c55e', '#f97316', '#ef4444'], borderWidth: 0 }] },
                 options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom' } } }
             });
         }
@@ -138,7 +155,7 @@ const Charts: React.FC = () => {
             weeklyChart?.destroy();
             statusChart?.destroy();
         };
-    }, []);
+    }, [bins]);
 
     return (
          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -156,29 +173,35 @@ const Charts: React.FC = () => {
 
 const Map: React.FC<{ bins: Bin[], onMarkerClick: (bin: Bin) => void }> = ({ bins, onMarkerClick }) => {
     const mapRef = useRef<HTMLDivElement>(null);
-    const isMapInitialized = useRef(false);
+    const mapInstance = useRef<any>(null);
+    const markers = useRef<any[]>([]);
 
     useEffect(() => {
-        if (mapRef.current && !isMapInitialized.current) {
-            const map = L.map(mapRef.current).setView([51.505, -0.09], 13);
+        if (mapRef.current && !mapInstance.current) {
+            mapInstance.current = L.map(mapRef.current).setView([51.505, -0.09], 13);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            }).addTo(map);
-
-            const binIcon = L.icon({
-                iconUrl: 'https://cdn-icons-png.flaticon.com/512/484/484613.png',
-                iconSize: [32, 32],
-                iconAnchor: [16, 32],
-                popupAnchor: [0, -32]
-            });
-
-            bins.forEach(bin => {
-                const marker = L.marker(bin.coords, { icon: binIcon }).addTo(map)
-                    .bindPopup(`<b>${bin.id}</b><br>Status: ${bin.status}`);
-                marker.on('click', () => onMarkerClick(bin));
-            });
-            isMapInitialized.current = true;
+            }).addTo(mapInstance.current);
         }
+
+        // Clear existing markers
+        markers.current.forEach(marker => marker.remove());
+        markers.current = [];
+
+        const binIcon = L.icon({
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/484/484613.png',
+            iconSize: [32, 32],
+            iconAnchor: [16, 32],
+            popupAnchor: [0, -32]
+        });
+
+        bins.forEach(bin => {
+            const marker = L.marker(bin.coords, { icon: binIcon }).addTo(mapInstance.current)
+                .bindPopup(`<b>${bin.id}</b><br>Status: ${bin.status}`);
+            marker.on('click', () => onMarkerClick(bin));
+            markers.current.push(marker);
+        });
+
     }, [bins, onMarkerClick]);
     
     return (
@@ -189,7 +212,7 @@ const Map: React.FC<{ bins: Bin[], onMarkerClick: (bin: Bin) => void }> = ({ bin
     );
 }
 
-const BinDetailsModal: React.FC<{ bin: Bin | null, onClose: () => void }> = ({ bin, onClose }) => {
+const BinDetailsModal: React.FC<{ bin: Bin | null; onClose: () => void; onMarkAsEmptied: (binId: string) => void; }> = ({ bin, onClose, onMarkAsEmptied }) => {
     if (!bin) return null;
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -217,6 +240,10 @@ const BinDetailsModal: React.FC<{ bin: Bin | null, onClose: () => void }> = ({ b
                                     <label className="text-sm text-gray-500">Fill Level</label>
                                     <p className="font-medium text-gray-800">{bin.fillLevel}%</p>
                                 </div>
+                                 <div>
+                                    <label className="text-sm text-gray-500">Battery</label>
+                                    <p className="font-medium text-gray-800">{bin.batteryLevel}%</p>
+                                </div>
                                 <div>
                                     <label className="text-sm text-gray-500">Status</label>
                                     <p className="font-medium text-gray-800">{bin.status}</p>
@@ -227,7 +254,7 @@ const BinDetailsModal: React.FC<{ bin: Bin | null, onClose: () => void }> = ({ b
                     <div className="mt-6">
                         <h4 className="font-semibold mb-2 text-gray-700">Actions</h4>
                         <div className="flex space-x-3">
-                            <button className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition">Mark as Emptied</button>
+                            <button onClick={() => { if(bin) onMarkAsEmptied(bin.id) }} className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition">Mark as Emptied</button>
                             <button className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition">Request Service</button>
                             <button className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">View History</button>
                         </div>
@@ -238,10 +265,37 @@ const BinDetailsModal: React.FC<{ bin: Bin | null, onClose: () => void }> = ({ b
     );
 };
 
+const DeleteConfirmationModal: React.FC<{ title: string; message: string; onConfirm: () => void; onCancel: () => void; }> = ({ title, message, onConfirm, onCancel }) => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div className="p-6">
+                <div className="flex items-start">
+                    <div className="flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                        <AlertTriangleIcon className="h-6 w-6 text-red-600" />
+                    </div>
+                    <div className="ml-4 text-left">
+                        <h3 className="text-lg leading-6 font-medium text-gray-900">{title}</h3>
+                        <div className="mt-2">
+                            <p className="text-sm text-gray-500">{message}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div className="bg-gray-50 px-6 py-3 flex justify-end space-x-3">
+                <button type="button" onClick={onCancel} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Cancel</button>
+                <button type="button" onClick={onConfirm} className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md shadow-sm hover:bg-red-700">Confirm Delete</button>
+            </div>
+        </div>
+    </div>
+);
+
 // --- MAIN DASHBOARD COMPONENT ---
 const SmartBinDashboard: React.FC = () => {
+    const [bins, setBins] = useState<Bin[]>(BINS_DATA);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedBin, setSelectedBin] = useState<Bin | null>(null);
+    const [binToDelete, setBinToDelete] = useState<Bin | null>(null);
+    const [searchTerm, setSearchTerm] = useState('');
 
     const handleRowClick = (bin: Bin) => {
         setSelectedBin(bin);
@@ -253,23 +307,58 @@ const SmartBinDashboard: React.FC = () => {
         setSelectedBin(null);
     };
 
+    const handleDeleteRequest = (bin: Bin) => {
+        setBinToDelete(bin);
+    };
+
+    const handleDeleteConfirm = () => {
+        if (binToDelete) {
+            setBins(prev => prev.filter(b => b.id !== binToDelete.id));
+            setBinToDelete(null);
+        }
+    };
+    
+    const handleMarkAsEmptied = (binId: string) => {
+        setBins(prevBins => 
+            prevBins.map(b => 
+                b.id === binId 
+                ? { ...b, fillLevel: 5, status: 'Operational', lastEmptied: 'Just now' } 
+                : b
+            )
+        );
+        closeModal();
+    };
+
+    const filteredBins = bins.filter(bin =>
+        bin.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        bin.location.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    const statusCounts = {
+        Total: filteredBins.length,
+        Operational: filteredBins.filter(b => b.status === 'Operational' || b.status === 'Normal').length,
+        'Needs Attention': filteredBins.filter(b => b.status === 'Warning').length,
+        Critical: filteredBins.filter(b => b.status === 'Critical').length,
+    };
+    
     return (
         <div className="flex flex-col gap-6">
-            <BinDetailsModal bin={selectedBin} onClose={closeModal} />
+            <BinDetailsModal bin={selectedBin} onClose={closeModal} onMarkAsEmptied={handleMarkAsEmptied} />
+            {binToDelete && <DeleteConfirmationModal title="Delete Bin" message={`Are you sure you want to delete bin ${binToDelete.id}? This action cannot be undone.`} onConfirm={handleDeleteConfirm} onCancel={() => setBinToDelete(null)} />}
             <div className="bg-white rounded-lg shadow p-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                     <h1 className="text-2xl font-bold text-gray-800">Smart Bin Project Dashboard</h1>
                     <div className="relative w-full sm:w-auto">
-                        <input type="text" placeholder="Search bins..." className="w-full sm:w-auto pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"/>
+                        <input type="text" placeholder="Search bins..." className="w-full sm:w-auto pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent" onChange={(e) => setSearchTerm(e.target.value)} value={searchTerm}/>
                         <SearchIcon className="absolute left-3 top-2.5 text-gray-400 w-5 h-5"/>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                    <StatusCard title="Total" />
-                    <StatusCard title="Operational" />
-                    <StatusCard title="Needs Attention" />
-                    <StatusCard title="Critical" />
+                    <StatusCard title="Total" count={statusCounts.Total}/>
+                    <StatusCard title="Operational" count={statusCounts.Operational}/>
+                    <StatusCard title="Needs Attention" count={statusCounts['Needs Attention']}/>
+                    <StatusCard title="Critical" count={statusCounts.Critical}/>
                 </div>
                 
                 <div className="overflow-x-auto">
@@ -280,19 +369,25 @@ const SmartBinDashboard: React.FC = () => {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fill Level</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Battery</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Emptied</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {BINS_DATA.map(bin => <BinTableRow key={bin.id} bin={bin} onRowClick={handleRowClick} />)}
+                            {filteredBins.map(bin => <BinTableRow key={bin.id} bin={bin} onRowClick={handleRowClick} onDeleteRequest={handleDeleteRequest}/>)}
                         </tbody>
-                    </table>
+</table>
+                     {filteredBins.length === 0 && (
+                        <div className="text-center py-8 text-gray-500">
+                            No bins found.
+                        </div>
+                    )}
                 </div>
             </div>
             
-            <Charts />
-            <Map bins={BINS_DATA} onMarkerClick={handleRowClick} />
+            <Charts bins={bins}/>
+            <Map bins={bins} onMarkerClick={handleRowClick} />
         </div>
     );
 };

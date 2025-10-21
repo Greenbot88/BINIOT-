@@ -98,7 +98,6 @@ export const UploadCloudIcon: React.FC<IconProps> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M20 17.5A2.5 2.5 0 0 0 22.5 15a2.5 2.5 0 0 0-2.5-2.5h-.73A8.001 8.001 0 0 0 4.77 11.5a5.5 5.5 0 0 0 1.25 10.95h11.58A3.5 3.5 0 0 0 20 17.5z"></path><path d="M8 12.5l4-4 4 4"></path><path d="M12 8.5v8"></path></svg>
 );
 
-// FIX: Add missing BatteryIcon component.
 export const BatteryIcon: React.FC<IconProps> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="1" y="6" width="18" height="12" rx="2" ry="2"></rect><line x1="23" y1="13" x2="23" y2="11"></line></svg>
 );
