@@ -67,6 +67,13 @@ interface MqttConfig {
     commandTopic: string;
 }
 
+interface Notification {
+  id: string;
+  type: 'critical' | 'low_battery';
+  deviceId: string;
+  message: string;
+}
+
 
 const VIEW_CONFIGS: Record<View, ViewConfig> = {
     dashboard: { title: 'Dashboard', path: ['Home', 'Smart Bin', 'Dashboard'] },
@@ -177,6 +184,52 @@ const PlaceholderPage: React.FC<{ title: string }> = ({ title }) => (
         <p className="mt-4 text-gray-600">This section is under development. Content for the {title.toLowerCase()} will be available soon.</p>
     </div>
 );
+
+// --- NOTIFICATION COMPONENTS ---
+const NotificationToast: React.FC<{ notification: Notification; onDismiss: (id: string) => void; }> = ({ notification, onDismiss }) => {
+    const isCritical = notification.type === 'critical';
+    const icon = isCritical ? <AlertTriangleIcon className="w-6 h-6 text-red-500" /> : <BatteryIcon className="w-6 h-6 text-orange-500" />;
+    const borderColor = isCritical ? 'border-red-200' : 'border-orange-200';
+
+    return (
+        <div className={`w-full max-w-sm bg-white rounded-lg shadow-lg pointer-events-auto ring-1 ring-black ring-opacity-5 overflow-hidden border ${borderColor} mb-4 animate-fade-in-right`}>
+            <style>{`
+                @keyframes fade-in-right {
+                    from { opacity: 0; transform: translateX(100%); }
+                    to { opacity: 1; transform: translateX(0); }
+                }
+                .animate-fade-in-right { animation: fade-in-right 0.3s ease-out forwards; }
+            `}</style>
+            <div className="p-4">
+                <div className="flex items-start">
+                    <div className="flex-shrink-0">{icon}</div>
+                    <div className="ml-3 w-0 flex-1 pt-0.5">
+                        <p className="text-sm font-medium text-gray-900">{isCritical ? `Critical Alert` : `Low Battery`}: {notification.deviceId}</p>
+                        <p className="mt-1 text-sm text-gray-500">{notification.message}</p>
+                    </div>
+                    <div className="ml-4 flex-shrink-0 flex">
+                        <button onClick={() => onDismiss(notification.id)} className="inline-flex text-gray-400 rounded-md hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500">
+                            <span className="sr-only">Close</span>
+                            <XIcon className="h-5 w-5" />
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const NotificationContainer: React.FC<{ notifications: Notification[]; onDismiss: (id: string) => void; }> = ({ notifications, onDismiss }) => {
+    return (
+        <div aria-live="assertive" className="fixed inset-0 flex items-end px-4 py-6 pointer-events-none sm:p-6 sm:items-start z-[100]">
+            <div className="w-full flex flex-col items-center space-y-4 sm:items-end">
+                {notifications.map(n => (
+                    <NotificationToast key={n.id} notification={n} onDismiss={onDismiss} />
+                ))}
+            </div>
+        </div>
+    );
+};
 
 // --- ADD/EDIT DEVICE COMPONENT ---
 const AddDevicePage: React.FC<{ onCancel: () => void; onSave: (device: Device) => void; deviceToEdit?: Device | null; }> = ({ onCancel, onSave, deviceToEdit }) => {
@@ -1212,6 +1265,45 @@ const App = () => {
     const [view, setView] = useState<View>('dashboard');
     const [history, setHistory] = useState<View[]>(['dashboard']);
     const [devices, setDevices] = useState<Device[]>(initialDevices);
+    const [notifications, setNotifications] = useState<Notification[]>([]);
+
+    const updateNotifications = (updatedDevice: Device) => {
+        setNotifications(prevNotifications => {
+            let currentNotifications = [...prevNotifications];
+            const { id: deviceId, status, batteryLevel } = updatedDevice;
+
+            // Check for CRITICAL FILL LEVEL
+            const criticalFillId = `${deviceId}-critical-fill`;
+            const isCritical = status === 'Critical';
+            const hasCriticalFillNotif = currentNotifications.some(n => n.id === criticalFillId);
+
+            if (isCritical && !hasCriticalFillNotif) {
+                currentNotifications.push({
+                    id: criticalFillId, type: 'critical', deviceId,
+                    message: `Bin ${deviceId} has reached a critical fill level and needs to be emptied.`
+                });
+            } else if (!isCritical && hasCriticalFillNotif) {
+                currentNotifications = currentNotifications.filter(n => n.id !== criticalFillId);
+            }
+            
+            // Check for LOW BATTERY
+            const lowBatteryId = `${deviceId}-low-battery`;
+            const LOW_BATTERY_THRESHOLD = 20;
+            const isLowBattery = batteryLevel <= LOW_BATTERY_THRESHOLD;
+            const hasLowBatteryNotif = currentNotifications.some(n => n.id === lowBatteryId);
+
+            if (isLowBattery && !hasLowBatteryNotif) {
+                 currentNotifications.push({
+                    id: lowBatteryId, type: 'low_battery', deviceId,
+                    message: `Bin ${deviceId}'s battery is very low at ${batteryLevel}%. Please take action.`
+                });
+            } else if (!isLowBattery && hasLowBatteryNotif) {
+                currentNotifications = currentNotifications.filter(n => n.id !== lowBatteryId);
+            }
+            
+            return currentNotifications;
+        });
+    };
 
     useEffect(() => {
         const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
@@ -1235,50 +1327,37 @@ const App = () => {
                 if (topicParts.length === 4 && topicParts[0] === 'fernhill' && topicParts[1] === 'bins' && topicParts[3] === 'telemetry') {
                     const deviceId = topicParts[2];
 
-                    setDevices(prevDevices => 
-                        prevDevices.map(d => {
-                            if (d.id !== deviceId) {
-                                return d;
-                            }
+                    setDevices(prevDevices => {
+                        let targetDevice: Device | undefined;
+                        const newDevices = prevDevices.map(d => {
+                            if (d.id !== deviceId) return d;
 
                             const newFillLevel = telemetry.fillLevel ?? d.fillLevel;
                             const newBatteryLevel = telemetry.batteryLevel ?? d.batteryLevel;
                             
                             let newStatus: 'Operational' | 'Warning' | 'Critical' = 'Operational';
-                            if (newFillLevel >= d.criticalLevel) {
-                                newStatus = 'Critical';
-                            } else if (newFillLevel >= d.warningLevel) {
-                                newStatus = 'Warning';
-                            }
+                            if (newFillLevel >= d.criticalLevel) newStatus = 'Critical';
+                            else if (newFillLevel >= d.warningLevel) newStatus = 'Warning';
 
-                            return {
-                                ...d,
-                                fillLevel: newFillLevel,
-                                batteryLevel: newBatteryLevel,
-                                status: newStatus,
-                            };
-                        })
-                    );
+                            targetDevice = { ...d, fillLevel: newFillLevel, batteryLevel: newBatteryLevel, status: newStatus };
+                            return targetDevice;
+                        });
+
+                        if (targetDevice) {
+                            updateNotifications(targetDevice);
+                        }
+                        
+                        return newDevices;
+                    });
                 }
             } catch (e) {
                 console.error('Error processing MQTT message:', e);
             }
         });
         
-        client.on('error', (err: Error) => {
-            console.error('MQTT Connection Error:', err);
-            client.end();
-        });
-
-        client.on('close', () => {
-            console.log('MQTT Disconnected');
-        });
-
-        return () => {
-            if (client) {
-                client.end();
-            }
-        };
+        client.on('error', (err: Error) => { console.error('MQTT Connection Error:', err); client.end(); });
+        client.on('close', () => { console.log('MQTT Disconnected'); });
+        return () => { if (client) client.end(); };
     }, []);
 
     const navigate = (newView: View) => {
@@ -1296,6 +1375,10 @@ const App = () => {
             setView(previousView);
             setHistory(newHistory);
         }
+    };
+    
+    const handleDismissNotification = (id: string) => {
+        setNotifications(prev => prev.filter(n => n.id !== id));
     };
 
     const renderView = () => {
@@ -1325,6 +1408,7 @@ const App = () => {
     return (
         <div className="min-h-screen flex flex-col font-sans">
             <Navbar />
+            <NotificationContainer notifications={notifications} onDismiss={handleDismissNotification} />
             <main className="flex-grow container mx-auto p-4 lg:p-6">
                 <div className="flex flex-col lg:flex-row gap-6">
                     <Sidebar currentView={view} navigate={navigate} />
