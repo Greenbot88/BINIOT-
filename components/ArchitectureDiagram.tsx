@@ -6,26 +6,27 @@ declare const L: any;
 declare const Chart: any;
 
 // --- TYPE DEFINITIONS ---
-type BinStatus = 'Critical' | 'Warning' | 'Normal' | 'Operational';
-interface Bin {
+// This type must be kept in sync with the one in App.tsx
+interface Device {
   id: string;
-  location: string;
-  status: BinStatus;
-  fillLevel: number;
+  model: string;
+  firmwareVersion: string;
+  locationName: string;
+  building: string;
+  floor: string;
+  zone: string;
+  connectionType: 'wifi' | 'ethernet' | 'cellular';
+  networkName: string;
+  warningLevel: number;
+  criticalLevel: number;
   batteryLevel: number;
+  status: 'Operational' | 'Warning' | 'Critical';
+  fillLevel: number;
   lastEmptied: string;
-  coords: [number, number];
+  coords?: [number, number];
 }
 
 // --- MOCK DATA & CONFIG ---
-const BINS_DATA: Bin[] = [
-  { id: 'SB-001', location: 'Main Entrance', status: 'Critical', fillLevel: 95, batteryLevel: 15, lastEmptied: '2 days ago', coords: [51.505, -0.09] },
-  { id: 'SB-002', location: 'Cafeteria', status: 'Warning', fillLevel: 78, batteryLevel: 45, lastEmptied: '1 day ago', coords: [51.51, -0.1] },
-  { id: 'SB-003', location: 'Office Area', status: 'Normal', fillLevel: 42, batteryLevel: 88, lastEmptied: '4 hours ago', coords: [51.515, -0.12] },
-  { id: 'SB-004', location: 'Floor 2, West Wing', status: 'Normal', fillLevel: 35, batteryLevel: 95, lastEmptied: '8 hours ago', coords: [51.52, -0.11]},
-  { id: 'SB-005', location: 'Parking Garage P1', status: 'Operational', fillLevel: 15, batteryLevel: 100, lastEmptied: '3 hours ago', coords: [51.50, -0.115]},
-];
-
 const STATUS_CONFIG_BASE = {
   Total: { icon: <Trash2Icon className="w-5 h-5"/>, color: 'gray' },
   Operational: { icon: <CheckCircleIcon className="w-5 h-5"/>, color: 'green' },
@@ -68,61 +69,59 @@ const StatusCard: React.FC<{ title: string; count: number }> = ({ title, count }
     );
 };
 
-const BinTableRow: React.FC<{ bin: Bin; onRowClick: (bin: Bin) => void; onDeleteRequest: (bin: Bin) => void; }> = ({ bin, onRowClick, onDeleteRequest }) => {
-    const statusStyles: Record<BinStatus, string> = {
+const BinTableRow: React.FC<{ device: Device; onRowClick: (device: Device) => void; onDeleteRequest: (device: Device) => void; }> = ({ device, onRowClick, onDeleteRequest }) => {
+    const statusStyles: Record<Device['status'], string> = {
         Critical: 'bg-red-100 text-red-800',
         Warning: 'bg-orange-100 text-orange-800',
-        Normal: 'bg-green-100 text-green-800',
-        Operational: 'bg-green-100 text-green-800'
+        Operational: 'bg-green-100 text-green-800',
     };
-    const progressStyles: Record<BinStatus, string> = {
+    const progressStyles: Record<Device['status'], string> = {
         Critical: 'bg-red-500',
         Warning: 'bg-orange-500',
-        Normal: 'bg-green-500',
-        Operational: 'bg-green-500'
+        Operational: 'bg-green-500',
     };
-    const batteryStyle = getBatteryStyle(bin.batteryLevel);
+    const batteryStyle = getBatteryStyle(device.batteryLevel);
 
     return (
-        <tr className="hover:bg-gray-50 cursor-pointer" onClick={() => onRowClick(bin)}>
+        <tr className="hover:bg-gray-50 cursor-pointer" onClick={() => onRowClick(device)}>
             <td className="px-6 py-4 whitespace-nowrap">
                 <div className="flex items-center">
                     <div className="flex-shrink-0 h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
                         <Trash2Icon className="text-gray-600" />
                     </div>
                     <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900">{bin.id}</div>
+                        <div className="text-sm font-medium text-gray-900">{device.id}</div>
                     </div>
                 </div>
             </td>
-            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{bin.location}</td>
+            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{device.locationName}</td>
             <td className="px-6 py-4 whitespace-nowrap">
-                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusStyles[bin.status]}`}>
-                    {bin.status}
+                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusStyles[device.status]}`}>
+                    {device.status}
                 </span>
             </td>
             <td className="px-6 py-4 whitespace-nowrap">
                 <div className="flex items-center">
                     <div className="w-32">
                         <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${progressStyles[bin.status]}`} style={{ width: `${bin.fillLevel}%` }}></div>
+                            <div className={`h-full rounded-full ${progressStyles[device.status]}`} style={{ width: `${device.fillLevel}%` }}></div>
                         </div>
                     </div>
-                    <span className="ml-2 text-sm text-gray-500">{bin.fillLevel}%</span>
+                    <span className="ml-2 text-sm text-gray-500">{device.fillLevel}%</span>
                 </div>
             </td>
             <td className="px-6 py-4 whitespace-nowrap text-sm">
                 <div className={`flex items-center ${batteryStyle.color}`}>
                     <BatteryIcon className="w-4 h-4 mr-2" />
-                    <span>{bin.batteryLevel}%</span>
+                    <span>{device.batteryLevel}%</span>
                 </div>
             </td>
-            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{bin.lastEmptied}</td>
+            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{device.lastEmptied}</td>
             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                <button className="text-amber-600 hover:text-amber-900 mr-4" onClick={(e) => { e.stopPropagation(); alert(`Editing ${bin.id}`); }}>
+                <button className="text-amber-600 hover:text-amber-900 mr-4" onClick={(e) => { e.stopPropagation(); alert(`Editing ${device.id}`); }}>
                     <EditIcon className="w-4 h-4" />
                 </button>
-                <button className="text-red-600 hover:text-red-900" onClick={(e) => { e.stopPropagation(); onDeleteRequest(bin); }}>
+                <button className="text-red-600 hover:text-red-900" onClick={(e) => { e.stopPropagation(); onDeleteRequest(device); }}>
                     <TrashIcon className="w-4 h-4" />
                 </button>
             </td>
@@ -130,7 +129,7 @@ const BinTableRow: React.FC<{ bin: Bin; onRowClick: (bin: Bin) => void; onDelete
     );
 };
 
-const Charts: React.FC<{bins: Bin[]}> = ({ bins }) => {
+const Charts: React.FC<{devices: Device[]}> = ({ devices }) => {
     const weeklyChartRef = useRef<HTMLCanvasElement>(null);
     const statusChartRef = useRef<HTMLCanvasElement>(null);
 
@@ -143,9 +142,9 @@ const Charts: React.FC<{bins: Bin[]}> = ({ bins }) => {
             });
         }
         if (statusChartRef.current) {
-            const opCount = bins.filter(b => b.status === 'Operational' || b.status === 'Normal').length;
-            const warnCount = bins.filter(b => b.status === 'Warning').length;
-            const critCount = bins.filter(b => b.status === 'Critical').length;
+            const opCount = devices.filter(b => b.status === 'Operational').length;
+            const warnCount = devices.filter(b => b.status === 'Warning').length;
+            const critCount = devices.filter(b => b.status === 'Critical').length;
             statusChart = new Chart(statusChartRef.current, {
                 type: 'doughnut', data: { labels: ['Operational', 'Warning', 'Critical'], datasets: [{ data: [opCount, warnCount, critCount], backgroundColor: ['#22c55e', '#f97316', '#ef4444'], borderWidth: 0 }] },
                 options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom' } } }
@@ -155,7 +154,7 @@ const Charts: React.FC<{bins: Bin[]}> = ({ bins }) => {
             weeklyChart?.destroy();
             statusChart?.destroy();
         };
-    }, [bins]);
+    }, [devices]);
 
     return (
          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -171,7 +170,7 @@ const Charts: React.FC<{bins: Bin[]}> = ({ bins }) => {
     );
 };
 
-const Map: React.FC<{ bins: Bin[], onMarkerClick: (bin: Bin) => void }> = ({ bins, onMarkerClick }) => {
+const Map: React.FC<{ devices: Device[], onMarkerClick: (device: Device) => void }> = ({ devices, onMarkerClick }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstance = useRef<any>(null);
     const markers = useRef<any[]>([]);
@@ -195,14 +194,16 @@ const Map: React.FC<{ bins: Bin[], onMarkerClick: (bin: Bin) => void }> = ({ bin
             popupAnchor: [0, -32]
         });
 
-        bins.forEach(bin => {
-            const marker = L.marker(bin.coords, { icon: binIcon }).addTo(mapInstance.current)
-                .bindPopup(`<b>${bin.id}</b><br>Status: ${bin.status}`);
-            marker.on('click', () => onMarkerClick(bin));
-            markers.current.push(marker);
+        devices.forEach(device => {
+            if (device.coords) {
+                const marker = L.marker(device.coords, { icon: binIcon }).addTo(mapInstance.current)
+                    .bindPopup(`<b>${device.id}</b><br>Status: ${device.status}`);
+                marker.on('click', () => onMarkerClick(device));
+                markers.current.push(marker);
+            }
         });
 
-    }, [bins, onMarkerClick]);
+    }, [devices, onMarkerClick]);
     
     return (
          <div className="bg-white rounded-lg shadow p-4">
@@ -212,14 +213,14 @@ const Map: React.FC<{ bins: Bin[], onMarkerClick: (bin: Bin) => void }> = ({ bin
     );
 }
 
-const BinDetailsModal: React.FC<{ bin: Bin | null; onClose: () => void; onMarkAsEmptied: (binId: string) => void; }> = ({ bin, onClose, onMarkAsEmptied }) => {
-    if (!bin) return null;
+const BinDetailsModal: React.FC<{ device: Device | null; onClose: () => void; onMarkAsEmptied: (deviceId: string) => void; }> = ({ device, onClose, onMarkAsEmptied }) => {
+    if (!device) return null;
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg w-full max-w-2xl mx-4">
                 <div className="p-6">
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-bold text-gray-800">Bin Details: {bin.id}</h3>
+                        <h3 className="text-xl font-bold text-gray-800">Bin Details: {device.id}</h3>
                         <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
                             <XIcon className="w-6 h-6" />
                         </button>
@@ -228,9 +229,9 @@ const BinDetailsModal: React.FC<{ bin: Bin | null; onClose: () => void; onMarkAs
                         <div>
                             <h4 className="font-semibold mb-2 text-gray-700">Basic Information</h4>
                             <div className="space-y-2">
-                                <div><label className="text-sm text-gray-500">Location</label><p className="font-medium text-gray-800">{bin.location}</p></div>
+                                <div><label className="text-sm text-gray-500">Location</label><p className="font-medium text-gray-800">{device.locationName}</p></div>
                                 <div><label className="text-sm text-gray-500">Installation Date</label><p className="font-medium text-gray-800">2023-05-15</p></div>
-                                <div><label className="text-sm text-gray-500">Last Emptied</label><p className="font-medium text-gray-800">{bin.lastEmptied}</p></div>
+                                <div><label className="text-sm text-gray-500">Last Emptied</label><p className="font-medium text-gray-800">{device.lastEmptied}</p></div>
                             </div>
                         </div>
                         <div>
@@ -238,15 +239,15 @@ const BinDetailsModal: React.FC<{ bin: Bin | null; onClose: () => void; onMarkAs
                             <div className="space-y-2">
                                 <div>
                                     <label className="text-sm text-gray-500">Fill Level</label>
-                                    <p className="font-medium text-gray-800">{bin.fillLevel}%</p>
+                                    <p className="font-medium text-gray-800">{device.fillLevel}%</p>
                                 </div>
                                  <div>
                                     <label className="text-sm text-gray-500">Battery</label>
-                                    <p className="font-medium text-gray-800">{bin.batteryLevel}%</p>
+                                    <p className="font-medium text-gray-800">{device.batteryLevel}%</p>
                                 </div>
                                 <div>
                                     <label className="text-sm text-gray-500">Status</label>
-                                    <p className="font-medium text-gray-800">{bin.status}</p>
+                                    <p className="font-medium text-gray-800">{device.status}</p>
                                 </div>
                             </div>
                         </div>
@@ -254,7 +255,7 @@ const BinDetailsModal: React.FC<{ bin: Bin | null; onClose: () => void; onMarkAs
                     <div className="mt-6">
                         <h4 className="font-semibold mb-2 text-gray-700">Actions</h4>
                         <div className="flex space-x-3">
-                            <button onClick={() => { if(bin) onMarkAsEmptied(bin.id) }} className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition">Mark as Emptied</button>
+                            <button onClick={() => { if(device) onMarkAsEmptied(device.id) }} className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition">Mark as Emptied</button>
                             <button className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition">Request Service</button>
                             <button className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">View History</button>
                         </div>
@@ -290,60 +291,79 @@ const DeleteConfirmationModal: React.FC<{ title: string; message: string; onConf
 );
 
 // --- MAIN DASHBOARD COMPONENT ---
-const SmartBinDashboard: React.FC = () => {
-    const [bins, setBins] = useState<Bin[]>(BINS_DATA);
+const SmartBinDashboard: React.FC<{ devices: Device[]; setDevices: React.Dispatch<React.SetStateAction<Device[]>>; }> = ({ devices, setDevices }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [selectedBin, setSelectedBin] = useState<Bin | null>(null);
-    const [binToDelete, setBinToDelete] = useState<Bin | null>(null);
+    const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+    const [binToDelete, setBinToDelete] = useState<Device | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [libraryError, setLibraryError] = useState<string | null>(null);
 
-    const handleRowClick = (bin: Bin) => {
-        setSelectedBin(bin);
+    useEffect(() => {
+        if (typeof L === 'undefined' || typeof Chart === 'undefined') {
+            const missing = [];
+            if (typeof L === 'undefined') missing.push('Map');
+            if (typeof Chart === 'undefined') missing.push('Chart');
+            setLibraryError(`Failed to load external ${missing.join(' and ')} libraries. Please check your internet connection and refresh the page.`);
+        }
+    }, []);
+
+    if (libraryError) {
+        return (
+            <div className="bg-white rounded-lg shadow p-6 text-center">
+                <AlertTriangleIcon className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                <h2 className="text-xl font-bold text-gray-800">Dashboard Error</h2>
+                <p className="mt-2 text-gray-600">{libraryError}</p>
+            </div>
+        );
+    }
+
+    const handleRowClick = (device: Device) => {
+        setSelectedDevice(device);
         setIsModalOpen(true);
     };
 
     const closeModal = () => {
         setIsModalOpen(false);
-        setSelectedBin(null);
+        setSelectedDevice(null);
     };
 
-    const handleDeleteRequest = (bin: Bin) => {
-        setBinToDelete(bin);
+    const handleDeleteRequest = (device: Device) => {
+        setBinToDelete(device);
     };
 
     const handleDeleteConfirm = () => {
         if (binToDelete) {
-            setBins(prev => prev.filter(b => b.id !== binToDelete.id));
+            setDevices(prev => prev.filter(b => b.id !== binToDelete.id));
             setBinToDelete(null);
         }
     };
     
-    const handleMarkAsEmptied = (binId: string) => {
-        setBins(prevBins => 
-            prevBins.map(b => 
-                b.id === binId 
-                ? { ...b, fillLevel: 5, status: 'Operational', lastEmptied: 'Just now' } 
-                : b
+    const handleMarkAsEmptied = (deviceId: string) => {
+        setDevices(prevDevices => 
+            prevDevices.map(d => 
+                d.id === deviceId 
+                ? { ...d, fillLevel: 5, status: 'Operational', lastEmptied: 'Just now' } 
+                : d
             )
         );
         closeModal();
     };
 
-    const filteredBins = bins.filter(bin =>
-        bin.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        bin.location.toLowerCase().includes(searchTerm.toLowerCase())
+    const filteredDevices = devices.filter(device =>
+        device.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        device.locationName.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     const statusCounts = {
-        Total: filteredBins.length,
-        Operational: filteredBins.filter(b => b.status === 'Operational' || b.status === 'Normal').length,
-        'Needs Attention': filteredBins.filter(b => b.status === 'Warning').length,
-        Critical: filteredBins.filter(b => b.status === 'Critical').length,
+        Total: filteredDevices.length,
+        Operational: filteredDevices.filter(b => b.status === 'Operational').length,
+        'Needs Attention': filteredDevices.filter(b => b.status === 'Warning').length,
+        Critical: filteredDevices.filter(b => b.status === 'Critical').length,
     };
     
     return (
         <div className="flex flex-col gap-6">
-            <BinDetailsModal bin={selectedBin} onClose={closeModal} onMarkAsEmptied={handleMarkAsEmptied} />
+            <BinDetailsModal device={selectedDevice} onClose={closeModal} onMarkAsEmptied={handleMarkAsEmptied} />
             {binToDelete && <DeleteConfirmationModal title="Delete Bin" message={`Are you sure you want to delete bin ${binToDelete.id}? This action cannot be undone.`} onConfirm={handleDeleteConfirm} onCancel={() => setBinToDelete(null)} />}
             <div className="bg-white rounded-lg shadow p-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -375,10 +395,10 @@ const SmartBinDashboard: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {filteredBins.map(bin => <BinTableRow key={bin.id} bin={bin} onRowClick={handleRowClick} onDeleteRequest={handleDeleteRequest}/>)}
+                            {filteredDevices.map(device => <BinTableRow key={device.id} device={device} onRowClick={handleRowClick} onDeleteRequest={handleDeleteRequest}/>)}
                         </tbody>
 </table>
-                     {filteredBins.length === 0 && (
+                     {filteredDevices.length === 0 && (
                         <div className="text-center py-8 text-gray-500">
                             No bins found.
                         </div>
@@ -386,8 +406,8 @@ const SmartBinDashboard: React.FC = () => {
                 </div>
             </div>
             
-            <Charts bins={bins}/>
-            <Map bins={bins} onMarkerClick={handleRowClick} />
+            <Charts devices={devices}/>
+            <Map devices={devices} onMarkerClick={handleRowClick} />
         </div>
     );
 };

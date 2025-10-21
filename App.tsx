@@ -4,11 +4,13 @@ import {
     BellIcon, LayoutIcon, MapIcon, PlusIcon, SettingsIcon, 
     Trash2Icon, UserIcon, UsersIcon, BarChart2Icon, HelpCircleIcon, 
     SlidersIcon, Share2Icon, ArrowLeftIcon, ChevronRightIcon,
-    PackageIcon, SaveIcon, EditIcon, TrashIcon, AlertTriangleIcon, XIcon, UploadCloudIcon, BatteryIcon
+    PackageIcon, SaveIcon, EditIcon, TrashIcon, AlertTriangleIcon, XIcon, UploadCloudIcon, BatteryIcon, FileTextIcon
 } from './components/Icons';
 
+declare const mqtt: any; 
+
 // --- Types ---
-type View = 'dashboard' | 'deviceManagement' | 'users' | 'settings' | 'maps' | 'analytics' | 'help' | 'ruleEngine' | 'mqtt';
+type View = 'dashboard' | 'deviceManagement' | 'users' | 'settings' | 'maps' | 'analytics' | 'help' | 'ruleEngine' | 'mqtt' | 'deviceLog';
 
 interface ViewConfig {
     title: string;
@@ -29,6 +31,9 @@ interface Device {
   criticalLevel: number;
   batteryLevel: number;
   status: 'Operational' | 'Warning' | 'Critical';
+  fillLevel: number;
+  lastEmptied: string;
+  coords?: [number, number];
 }
 
 interface User {
@@ -66,6 +71,7 @@ interface MqttConfig {
 const VIEW_CONFIGS: Record<View, ViewConfig> = {
     dashboard: { title: 'Dashboard', path: ['Home', 'Smart Bin', 'Dashboard'] },
     deviceManagement: { title: 'Device Management', path: ['Home', 'Smart Bin', 'Device Management'] },
+    deviceLog: { title: 'Device Log', path: ['Home', 'Monitoring', 'Device Log'] },
     users: { title: 'User Management', path: ['Home', 'Admin', 'Users'] },
     settings: { title: 'Settings', path: ['Home', 'Admin', 'Settings'] },
     maps: { title: 'Floor Maps', path: ['Home', 'Assets', 'Floor Maps'] },
@@ -74,6 +80,13 @@ const VIEW_CONFIGS: Record<View, ViewConfig> = {
     ruleEngine: { title: 'Rule Engine', path: ['Home', 'Automation', 'Rule Engine'] },
     mqtt: { title: 'MQTT Broker', path: ['Home', 'Configuration', 'MQTT Broker'] }
 };
+
+const initialDevices: Device[] = [
+    { id: 'SB-101', model: 'EcoBin-100', firmwareVersion: 'v1.2.3', locationName: 'Cafeteria', building: 'Building A', floor: '1', zone: 'A', connectionType: 'wifi', networkName: 'Office_WiFi', warningLevel: 70, criticalLevel: 85, batteryLevel: 95, status: 'Operational', fillLevel: 42, lastEmptied: '4 hours ago', coords: [51.51, -0.1] },
+    { id: 'SB-102', model: 'SmartBin-200', firmwareVersion: 'v2.0.1', locationName: 'Main Entrance', building: 'Building A', floor: 'G', zone: 'Lobby', connectionType: 'cellular', networkName: 'IoT_Network', warningLevel: 75, criticalLevel: 90, batteryLevel: 45, status: 'Warning', fillLevel: 78, lastEmptied: '1 day ago', coords: [51.505, -0.09] },
+    { id: 'SB-103', model: 'IoT-Waste-300', firmwareVersion: 'v3.1.0', locationName: 'Floor 2, West Wing', building: 'Building B', floor: '2', zone: 'C', connectionType: 'ethernet', networkName: 'CorpNet', warningLevel: 80, criticalLevel: 95, batteryLevel: 15, status: 'Critical', fillLevel: 95, lastEmptied: '2 days ago', coords: [51.515, -0.12] },
+    { id: 'SB-104', model: 'EcoBin-100', firmwareVersion: 'v1.2.5', locationName: 'Parking P1', building: 'Building A', floor: 'P1', zone: 'A', connectionType: 'wifi', networkName: 'Office_WiFi', warningLevel: 70, criticalLevel: 85, batteryLevel: 88, status: 'Operational', fillLevel: 35, lastEmptied: '8 hours ago', coords: [51.52, -0.11] },
+];
 
 // --- Components ---
 
@@ -126,6 +139,7 @@ const Sidebar: React.FC<{ currentView: View, navigate: (view: View) => void }> =
                 <div className="space-y-1">
                     <NavButton view="dashboard" icon={<LayoutIcon className="w-4 h-4" />} label="Dashboard" />
                     <NavButton view="deviceManagement" icon={<PackageIcon className="w-4 h-4" />} label="Device Management" />
+                    <NavButton view="deviceLog" icon={<FileTextIcon className="w-4 h-4" />} label="Device Log" />
                     <NavButton view="users" icon={<UsersIcon className="w-4 h-4" />} label="User Management" />
                     <NavButton view="ruleEngine" icon={<SlidersIcon className="w-4 h-4" />} label="Rule Engine" />
                     <NavButton view="mqtt" icon={<Share2Icon className="w-4 h-4" />} label="MQTT Broker" />
@@ -187,6 +201,8 @@ const AddDevicePage: React.FC<{ onCancel: () => void; onSave: (device: Device) =
             criticalLevel: parseInt(formData.get('critical-level') as string, 10),
             batteryLevel: deviceToEdit?.batteryLevel || 100, // Preserve battery or default
             status: deviceToEdit?.status || 'Operational', // Preserve status or default
+            fillLevel: deviceToEdit?.fillLevel || 0,
+            lastEmptied: deviceToEdit?.lastEmptied || 'Never',
         };
         onSave(newDevice);
     };
@@ -303,21 +319,13 @@ const DeleteConfirmationModal: React.FC<{ title: string; message: string; onConf
 
 
 // --- DEVICE MANAGEMENT PAGE ---
-const initialDevices: Device[] = [
-    { id: 'SB-101', model: 'EcoBin-100', firmwareVersion: 'v1.2.3', locationName: 'Cafeteria', building: 'Building A', floor: '1', zone: 'A', connectionType: 'wifi', networkName: 'Office_WiFi', warningLevel: 70, criticalLevel: 85, batteryLevel: 95, status: 'Operational' },
-    { id: 'SB-102', model: 'SmartBin-200', firmwareVersion: 'v2.0.1', locationName: 'Main Entrance', building: 'Building A', floor: 'G', zone: 'Lobby', connectionType: 'cellular', networkName: 'IoT_Network', warningLevel: 75, criticalLevel: 90, batteryLevel: 45, status: 'Warning' },
-    { id: 'SB-103', model: 'IoT-Waste-300', firmwareVersion: 'v3.1.0', locationName: 'Floor 2, West Wing', building: 'Building B', floor: '2', zone: 'C', connectionType: 'ethernet', networkName: 'CorpNet', warningLevel: 80, criticalLevel: 95, batteryLevel: 15, status: 'Critical' },
-    { id: 'SB-104', model: 'EcoBin-100', firmwareVersion: 'v1.2.5', locationName: 'Parking P1', building: 'Building A', floor: 'P1', zone: 'A', connectionType: 'wifi', networkName: 'Office_WiFi', warningLevel: 70, criticalLevel: 85, batteryLevel: 88, status: 'Operational' },
-];
-
 const getBatteryStyle = (level: number) => {
     if (level < 20) return { color: 'text-red-600' };
     if (level < 50) return { color: 'text-orange-600' };
     return { color: 'text-green-600' };
 };
 
-const DeviceManagementPage: React.FC = () => {
-    const [devices, setDevices] = useState<Device[]>(initialDevices);
+const DeviceManagementPage: React.FC<{ devices: Device[]; setDevices: React.Dispatch<React.SetStateAction<Device[]>> }> = ({ devices, setDevices }) => {
     const [isFormVisible, setIsFormVisible] = useState(false);
     const [deviceToEdit, setDeviceToEdit] = useState<Device | null>(null);
     const [deviceToDelete, setDeviceToDelete] = useState<Device | null>(null);
@@ -612,13 +620,6 @@ const UserManagementPage: React.FC = () => {
 
 
 // --- FLOOR MAPS PAGE ---
-const initialFloorMapDevices: Device[] = [
-    { id: 'SB-101', model: 'EcoBin-100', firmwareVersion: 'v1.2.3', locationName: 'Cafeteria', building: 'Building A', floor: '1', zone: 'A', connectionType: 'wifi', networkName: 'Office_WiFi', warningLevel: 70, criticalLevel: 85, batteryLevel: 95, status: 'Operational' },
-    { id: 'SB-102', model: 'SmartBin-200', firmwareVersion: 'v2.0.1', locationName: 'Main Entrance', building: 'Building A', floor: 'G', zone: 'Lobby', connectionType: 'cellular', networkName: 'IoT_Network', warningLevel: 75, criticalLevel: 90, batteryLevel: 45, status: 'Warning' },
-    { id: 'SB-103', model: 'IoT-Waste-300', firmwareVersion: 'v3.1.0', locationName: 'Floor 2, West Wing', building: 'Building B', floor: '2', zone: 'C', connectionType: 'ethernet', networkName: 'CorpNet', warningLevel: 80, criticalLevel: 95, batteryLevel: 15, status: 'Critical' },
-    { id: 'SB-104', model: 'EcoBin-100', firmwareVersion: 'v1.2.5', locationName: 'Parking P1', building: 'Building A', floor: 'P1', zone: 'A', connectionType: 'wifi', networkName: 'Office_WiFi', warningLevel: 70, criticalLevel: 85, batteryLevel: 88, status: 'Operational' },
-];
-
 const initialFloorsData: Floor[] = [
     { name: 'Ground Floor', imageUrl: 'https://placehold.co/1200x800/e2e8f0/64748b?text=Ground+Floor+Layout', bins: [{ id: 'SB-102', x: 25, y: 50 }] },
     { name: '1st Floor', imageUrl: 'https://placehold.co/1200x800/dbeafe/4b5563?text=1st+Floor+Layout', bins: [{ id: 'SB-101', x: 60, y: 40 }] },
@@ -667,14 +668,13 @@ const AddBinModal: React.FC<{ devices: Device[], onAdd: (deviceId: string) => vo
 const BinMarker: React.FC<{
     binLocation: FloorBin;
     device?: Device;
-    fillLevel: number;
     isEditMode: boolean;
     isActivePopup: boolean;
     onDelete: (id: string) => void;
     onPositionChange: (id: string, newPos: { x: number, y: number }) => void;
     onMarkerClick: (id: string) => void;
     mapRef: React.RefObject<HTMLDivElement>;
-}> = ({ binLocation, device, fillLevel, isEditMode, isActivePopup, onDelete, onPositionChange, onMarkerClick, mapRef }) => {
+}> = ({ binLocation, device, isEditMode, isActivePopup, onDelete, onPositionChange, onMarkerClick, mapRef }) => {
     const [isDragging, setIsDragging] = useState(false);
     const markerRef = useRef<HTMLDivElement>(null);
 
@@ -752,14 +752,13 @@ const BinMarker: React.FC<{
             <div className={`absolute bottom-full mb-2 w-max left-1/2 -translate-x-1/2 bg-gray-800 text-white text-xs rounded py-1 px-2 transition-opacity pointer-events-none z-20 ${isActivePopup ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                 <strong>ID:</strong> {binLocation.id}<br/>
                 <strong>Status:</strong> {status}<br/>
-                <strong>Fill Level:</strong> {fillLevel}%
+                <strong>Fill Level:</strong> {device?.fillLevel || 0}%
             </div>
         </div>
     );
 };
 
-const FloorMapsPage: React.FC = () => {
-    const [devices, setDevices] = useState(initialFloorMapDevices);
+const FloorMapsPage: React.FC<{ devices: Device[] }> = ({ devices }) => {
     const [floors, setFloors] = useState<Floor[]>(initialFloorsData);
     const [originalFloors, setOriginalFloors] = useState<Floor[]>(initialFloorsData);
     const [activeFloorIndex, setActiveFloorIndex] = useState(0);
@@ -774,20 +773,6 @@ const FloorMapsPage: React.FC = () => {
     const activeFloor = floors[activeFloorIndex];
 
     const getDeviceById = (id: string) => devices.find(d => d.id === id);
-    
-    const getFillLevel = (device: Device | undefined): number => {
-        if (!device) return 0;
-        switch (device.status) {
-            case 'Critical':
-                return Math.min(99, device.criticalLevel + 5);
-            case 'Warning':
-                return Math.min(device.criticalLevel - 1, device.warningLevel + 5);
-            case 'Operational':
-                return Math.max(10, device.warningLevel - 15);
-            default:
-                return 0;
-        }
-    };
 
     const toggleEditMode = () => {
         if (!isEditMode) {
@@ -855,9 +840,20 @@ const FloorMapsPage: React.FC = () => {
 
         if (floorName && fileInput.files && fileInput.files[0]) {
             const file = fileInput.files[0];
-            const imageUrl = URL.createObjectURL(file);
-            setFloors([...floors, { name: floorName, imageUrl, bins: [] }]);
-            form.reset();
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                if (reader.result) {
+                    const imageUrl = reader.result as string;
+                    setFloors(prevFloors => {
+                        const newFloors = [...prevFloors, { name: floorName, imageUrl, bins: [] }];
+                        // Automatically switch to the newly created floor
+                        setActiveFloorIndex(newFloors.length - 1);
+                        return newFloors;
+                    });
+                    form.reset();
+                }
+            };
+            reader.readAsDataURL(file);
         }
     };
     
@@ -931,7 +927,6 @@ const FloorMapsPage: React.FC = () => {
                             key={bin.id} 
                             binLocation={bin} 
                             device={getDeviceById(bin.id)}
-                            fillLevel={getFillLevel(device)}
                             isEditMode={isEditMode}
                             isActivePopup={activeBinPopup === bin.id}
                             onDelete={handleDeleteBin}
@@ -957,10 +952,10 @@ const FloorMapsPage: React.FC = () => {
 
 // --- MQTT BROKER PAGE ---
 const initialMqttConfig: MqttConfig = {
-    host: 'mqtt.fernhill-iot.com',
-    port: 1883,
-    useTLS: false,
-    username: 'bin_telemetry_user',
+    host: 'broker.hivemq.com',
+    port: 8884,
+    useTLS: true,
+    username: '',
     telemetryTopic: 'fernhill/bins/+/telemetry',
     commandTopic: 'fernhill/bins/+/commands',
 };
@@ -1072,10 +1067,219 @@ const MqttBrokerPage: React.FC = () => {
     );
 };
 
+// --- DEVICE LOG PAGE ---
+interface LogEntry {
+    timestamp: string;
+    topic: string;
+    payload: string;
+    source: string;
+}
+
+const DeviceLogPage: React.FC = () => {
+    const [logs, setLogs] = useState<LogEntry[]>([]);
+    const [isLogging, setIsLogging] = useState(false);
+    const [connectionStatus, setConnectionStatus] = useState<'Disconnected' | 'Connecting...' | 'Connected' | 'Error'>('Disconnected');
+    const clientRef = useRef<any | null>(null);
+    const logContainerRef = useRef<HTMLDivElement | null>(null);
+
+    const scrollToBottom = () => {
+        if (logContainerRef.current) {
+            logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+        }
+    };
+
+    useEffect(scrollToBottom, [logs]);
+
+    const startLogging = () => {
+        if (clientRef.current || isLogging) return;
+        
+        setIsLogging(true);
+        setConnectionStatus('Connecting...');
+
+        const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+        clientRef.current = client;
+
+        client.on('connect', () => {
+            setConnectionStatus('Connected');
+            // Subscribe to the telemetry topic for all smart bins
+            client.subscribe('fernhill/bins/+/telemetry', (err: Error) => {
+                if (err) {
+                    console.error('Subscription error:', err);
+                    setConnectionStatus('Error');
+                    client.end();
+                }
+            });
+        });
+
+        client.on('message', (topic: string, message: Uint8Array) => {
+            const payload = new TextDecoder("utf-8").decode(message);
+            const newLog: LogEntry = {
+                timestamp: new Date().toISOString(),
+                topic,
+                payload,
+                source: 'MQTT Broker',
+            };
+            setLogs(prevLogs => [...prevLogs.slice(-200), newLog]); // Keep last 200 logs
+        });
+        
+        client.on('error', (err: Error) => {
+            console.error('MQTT Connection Error:', err);
+            setConnectionStatus('Error');
+            client.end();
+            clientRef.current = null;
+            setIsLogging(false);
+        });
+
+        client.on('close', () => {
+            if (isLogging) { 
+                setConnectionStatus('Disconnected');
+            }
+            clientRef.current = null;
+            setIsLogging(false);
+        });
+    };
+    
+    const stopLogging = () => {
+        if (clientRef.current) {
+            clientRef.current.end();
+        }
+        setIsLogging(false);
+        setConnectionStatus('Disconnected');
+    };
+
+    const clearLogs = () => {
+        setLogs([]);
+    };
+    
+    // Cleanup on component unmount
+    useEffect(() => {
+        return () => {
+            if (clientRef.current) {
+                clientRef.current.end();
+            }
+        };
+    }, []);
+    
+    const statusStyles = {
+        'Disconnected': 'bg-gray-200 text-gray-700',
+        'Connecting...': 'bg-yellow-200 text-yellow-800 animate-pulse',
+        'Connected': 'bg-green-200 text-green-800',
+        'Error': 'bg-red-200 text-red-800'
+    };
+
+    return (
+        <div className="bg-white rounded-lg shadow p-6 h-[calc(100vh-12rem)] flex flex-col">
+            <h1 className="text-2xl font-bold text-gray-800 mb-4">Device Telemetry Log</h1>
+            
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 p-4 bg-gray-50 rounded-lg border">
+                <div className="flex items-center gap-4">
+                    {!isLogging ? (
+                        <button onClick={startLogging} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Start Logging</button>
+                    ) : (
+                        <button onClick={stopLogging} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">Stop Logging</button>
+                    )}
+                    <button onClick={clearLogs} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition">Clear Log</button>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-600">Status:</span>
+                    <span className={`px-3 py-1 text-sm font-semibold rounded-full ${statusStyles[connectionStatus]}`}>
+                        {connectionStatus}
+                    </span>
+                </div>
+            </div>
+
+            <div ref={logContainerRef} className="flex-grow bg-gray-900 text-white font-mono text-sm p-4 rounded-lg overflow-y-auto">
+                {logs.length === 0 ? (
+                    <p className="text-gray-400">Waiting for data... Start logging to see device telemetry.</p>
+                ) : (
+                    logs.map((log, index) => (
+                        <div key={index} className="flex flex-wrap items-start mb-2">
+                            <span className="text-cyan-400 mr-4 whitespace-nowrap">{log.timestamp}</span>
+                            <span className="text-green-400 mr-4 whitespace-nowrap">[{log.source}]</span>
+                            <span className="text-amber-400 mr-4 whitespace-nowrap">[{log.topic}]</span>
+                            <span className="text-gray-200 flex-1 whitespace-pre-wrap break-all">{log.payload}</span>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    );
+};
+
+
 // --- Main App Component ---
 const App = () => {
     const [view, setView] = useState<View>('dashboard');
     const [history, setHistory] = useState<View[]>(['dashboard']);
+    const [devices, setDevices] = useState<Device[]>(initialDevices);
+
+    useEffect(() => {
+        const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+
+        client.on('connect', () => {
+            console.log('MQTT Connected');
+            client.subscribe('fernhill/bins/+/telemetry', (err: Error) => {
+                if (err) {
+                    console.error('Subscription error:', err);
+                    client.end();
+                }
+            });
+        });
+
+        client.on('message', (topic: string, message: Uint8Array) => {
+            try {
+                const payloadStr = new TextDecoder("utf-8").decode(message);
+                const telemetry = JSON.parse(payloadStr);
+                const topicParts = topic.split('/');
+                
+                if (topicParts.length === 4 && topicParts[0] === 'fernhill' && topicParts[1] === 'bins' && topicParts[3] === 'telemetry') {
+                    const deviceId = topicParts[2];
+
+                    setDevices(prevDevices => 
+                        prevDevices.map(d => {
+                            if (d.id !== deviceId) {
+                                return d;
+                            }
+
+                            const newFillLevel = telemetry.fillLevel ?? d.fillLevel;
+                            const newBatteryLevel = telemetry.batteryLevel ?? d.batteryLevel;
+                            
+                            let newStatus: 'Operational' | 'Warning' | 'Critical' = 'Operational';
+                            if (newFillLevel >= d.criticalLevel) {
+                                newStatus = 'Critical';
+                            } else if (newFillLevel >= d.warningLevel) {
+                                newStatus = 'Warning';
+                            }
+
+                            return {
+                                ...d,
+                                fillLevel: newFillLevel,
+                                batteryLevel: newBatteryLevel,
+                                status: newStatus,
+                            };
+                        })
+                    );
+                }
+            } catch (e) {
+                console.error('Error processing MQTT message:', e);
+            }
+        });
+        
+        client.on('error', (err: Error) => {
+            console.error('MQTT Connection Error:', err);
+            client.end();
+        });
+
+        client.on('close', () => {
+            console.log('MQTT Disconnected');
+        });
+
+        return () => {
+            if (client) {
+                client.end();
+            }
+        };
+    }, []);
 
     const navigate = (newView: View) => {
         if (newView !== view) {
@@ -1097,13 +1301,15 @@ const App = () => {
     const renderView = () => {
         switch (view) {
             case 'dashboard':
-                return <SmartBinDashboard />;
+                return <SmartBinDashboard devices={devices} setDevices={setDevices} />;
             case 'deviceManagement':
-                return <DeviceManagementPage />;
+                return <DeviceManagementPage devices={devices} setDevices={setDevices} />;
+            case 'deviceLog':
+                return <DeviceLogPage />;
             case 'users':
                 return <UserManagementPage />;
             case 'maps':
-                return <FloorMapsPage />;
+                return <FloorMapsPage devices={devices} />;
             case 'mqtt':
                 return <MqttBrokerPage />;
             case 'analytics':
