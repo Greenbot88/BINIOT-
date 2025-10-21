@@ -1,0 +1,5 @@
+{
+  "name": "Fernhill IOT - Smart Bin Dashboard",
+  "description": "An IoT dashboard for the Fernhill IOT 'Smart Bin' project, featuring real-time monitoring, a rule engine, and data analytics.",
+  "requestFramePermissions": []
+}
