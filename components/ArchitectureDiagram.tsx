@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trash2Icon, CheckCircleIcon, AlertCircleIcon, AlertTriangleIcon, SearchIcon, EditIcon, TrashIcon, XIcon, BatteryIcon } from './Icons';
+import { Trash2Icon, CheckCircleIcon, AlertCircleIcon, AlertTriangleIcon, SearchIcon, EditIcon, TrashIcon, XIcon, BatteryIcon, DropletIcon, SunIcon } from './Icons';
 
 // TypeScript declarations for CDN libraries
 declare const L: any;
@@ -21,6 +21,7 @@ interface Device {
   criticalLevel: number;
   batteryLevel: number;
   status: 'Operational' | 'Warning' | 'Critical';
+  wasteType: 'Wet' | 'Dry';
   fillLevel: number;
   lastEmptied: string;
   coords?: [number, number];
@@ -95,6 +96,15 @@ const BinTableRow: React.FC<{ device: Device; onRowClick: (device: Device) => vo
                 </div>
             </td>
             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{device.locationName}</td>
+            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <div className="flex items-center">
+                    {device.wasteType === 'Wet' ? 
+                        <DropletIcon className="w-5 h-5 mr-2 text-blue-500" /> : 
+                        <SunIcon className="w-5 h-5 mr-2 text-yellow-500" />
+                    }
+                    <span>{device.wasteType}</span>
+                </div>
+            </td>
             <td className="px-6 py-4 whitespace-nowrap">
                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusStyles[device.status]}`}>
                     {device.status}
@@ -230,7 +240,16 @@ const BinDetailsModal: React.FC<{ device: Device | null; onClose: () => void; on
                             <h4 className="font-semibold mb-2 text-gray-700">Basic Information</h4>
                             <div className="space-y-2">
                                 <div><label className="text-sm text-gray-500">Location</label><p className="font-medium text-gray-800">{device.locationName}</p></div>
-                                <div><label className="text-sm text-gray-500">Installation Date</label><p className="font-medium text-gray-800">2023-05-15</p></div>
+                                <div>
+                                    <label className="text-sm text-gray-500">Waste Type</label>
+                                    <p className="font-medium text-gray-800 flex items-center">
+                                        {device.wasteType === 'Wet' ?
+                                            <DropletIcon className="w-4 h-4 mr-2 text-blue-500" /> :
+                                            <SunIcon className="w-4 h-4 mr-2 text-yellow-500" />
+                                        }
+                                        {device.wasteType}
+                                    </p>
+                                </div>
                                 <div><label className="text-sm text-gray-500">Last Emptied</label><p className="font-medium text-gray-800">{device.lastEmptied}</p></div>
                             </div>
                         </div>
@@ -387,6 +406,7 @@ const SmartBinDashboard: React.FC<{ devices: Device[]; setDevices: React.Dispatc
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bin ID</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waste Type</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fill Level</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Battery</th>

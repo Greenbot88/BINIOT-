@@ -4,7 +4,7 @@ import {
     BellIcon, LayoutIcon, MapIcon, PlusIcon, SettingsIcon, 
     Trash2Icon, UserIcon, UsersIcon, BarChart2Icon, HelpCircleIcon, 
     SlidersIcon, Share2Icon, ArrowLeftIcon, ChevronRightIcon,
-    PackageIcon, SaveIcon, EditIcon, TrashIcon, AlertTriangleIcon, XIcon, UploadCloudIcon, BatteryIcon, FileTextIcon
+    PackageIcon, SaveIcon, EditIcon, TrashIcon, AlertTriangleIcon, XIcon, UploadCloudIcon, BatteryIcon, FileTextIcon, DropletIcon, SunIcon
 } from './components/Icons';
 
 declare const mqtt: any; 
@@ -31,6 +31,7 @@ interface Device {
   criticalLevel: number;
   batteryLevel: number;
   status: 'Operational' | 'Warning' | 'Critical';
+  wasteType: 'Wet' | 'Dry';
   fillLevel: number;
   lastEmptied: string;
   coords?: [number, number];
@@ -89,10 +90,10 @@ const VIEW_CONFIGS: Record<View, ViewConfig> = {
 };
 
 const initialDevices: Device[] = [
-    { id: 'SB-101', model: 'EcoBin-100', firmwareVersion: 'v1.2.3', locationName: 'Cafeteria', building: 'Building A', floor: '1', zone: 'A', connectionType: 'wifi', networkName: 'Office_WiFi', warningLevel: 70, criticalLevel: 85, batteryLevel: 95, status: 'Operational', fillLevel: 42, lastEmptied: '4 hours ago', coords: [51.51, -0.1] },
-    { id: 'SB-102', model: 'SmartBin-200', firmwareVersion: 'v2.0.1', locationName: 'Main Entrance', building: 'Building A', floor: 'G', zone: 'Lobby', connectionType: 'cellular', networkName: 'IoT_Network', warningLevel: 75, criticalLevel: 90, batteryLevel: 45, status: 'Warning', fillLevel: 78, lastEmptied: '1 day ago', coords: [51.505, -0.09] },
-    { id: 'SB-103', model: 'IoT-Waste-300', firmwareVersion: 'v3.1.0', locationName: 'Floor 2, West Wing', building: 'Building B', floor: '2', zone: 'C', connectionType: 'ethernet', networkName: 'CorpNet', warningLevel: 80, criticalLevel: 95, batteryLevel: 15, status: 'Critical', fillLevel: 95, lastEmptied: '2 days ago', coords: [51.515, -0.12] },
-    { id: 'SB-104', model: 'EcoBin-100', firmwareVersion: 'v1.2.5', locationName: 'Parking P1', building: 'Building A', floor: 'P1', zone: 'A', connectionType: 'wifi', networkName: 'Office_WiFi', warningLevel: 70, criticalLevel: 85, batteryLevel: 88, status: 'Operational', fillLevel: 35, lastEmptied: '8 hours ago', coords: [51.52, -0.11] },
+    { id: 'SB-101', model: 'EcoBin-100', firmwareVersion: 'v1.2.3', locationName: 'Cafeteria', building: 'Building A', floor: '1', zone: 'A', connectionType: 'wifi', networkName: 'Office_WiFi', warningLevel: 70, criticalLevel: 85, batteryLevel: 95, status: 'Operational', wasteType: 'Wet', fillLevel: 42, lastEmptied: '4 hours ago', coords: [51.51, -0.1] },
+    { id: 'SB-102', model: 'SmartBin-200', firmwareVersion: 'v2.0.1', locationName: 'Main Entrance', building: 'Building A', floor: 'G', zone: 'Lobby', connectionType: 'cellular', networkName: 'IoT_Network', warningLevel: 75, criticalLevel: 90, batteryLevel: 45, status: 'Warning', wasteType: 'Dry', fillLevel: 78, lastEmptied: '1 day ago', coords: [51.505, -0.09] },
+    { id: 'SB-103', model: 'IoT-Waste-300', firmwareVersion: 'v3.1.0', locationName: 'Floor 2, West Wing', building: 'Building B', floor: '2', zone: 'C', connectionType: 'ethernet', networkName: 'CorpNet', warningLevel: 80, criticalLevel: 95, batteryLevel: 15, status: 'Critical', wasteType: 'Dry', fillLevel: 95, lastEmptied: '2 days ago', coords: [51.515, -0.12] },
+    { id: 'SB-104', model: 'EcoBin-100', firmwareVersion: 'v1.2.5', locationName: 'Parking P1', building: 'Building A', floor: 'P1', zone: 'A', connectionType: 'wifi', networkName: 'Office_WiFi', warningLevel: 70, criticalLevel: 85, batteryLevel: 88, status: 'Operational', wasteType: 'Dry', fillLevel: 35, lastEmptied: '8 hours ago', coords: [51.52, -0.11] },
 ];
 
 // --- Components ---
@@ -250,6 +251,7 @@ const AddDevicePage: React.FC<{ onCancel: () => void; onSave: (device: Device) =
             zone: formData.get('zone') as string,
             connectionType: formData.get('connection-type') as 'wifi' | 'ethernet' | 'cellular',
             networkName: formData.get('network-name') as string,
+            wasteType: formData.get('waste-type') as 'Wet' | 'Dry',
             warningLevel: parseInt(formData.get('warning-level') as string, 10),
             criticalLevel: parseInt(formData.get('critical-level') as string, 10),
             batteryLevel: deviceToEdit?.batteryLevel || 100, // Preserve battery or default
@@ -293,6 +295,13 @@ const AddDevicePage: React.FC<{ onCancel: () => void; onSave: (device: Device) =
                         <div>
                             <label htmlFor="firmware-version" className={labelClasses}>Firmware Version</label>
                             <input type="text" id="firmware-version" name="firmware-version" className={inputClasses} placeholder="v1.2.3" defaultValue={deviceToEdit?.firmwareVersion} />
+                        </div>
+                         <div>
+                            <label htmlFor="waste-type" className={labelClasses}>Waste Type</label>
+                            <select id="waste-type" name="waste-type" className={inputClasses} defaultValue={deviceToEdit?.wasteType || 'Dry'}>
+                                <option value="Dry">Dry Waste</option>
+                                <option value="Wet">Wet Waste</option>
+                            </select>
                         </div>
                     </div>
                     <div className="space-y-4">
@@ -440,6 +449,7 @@ const DeviceManagementPage: React.FC<{ devices: Device[]; setDevices: React.Disp
                         <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Device ID</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waste Type</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Battery</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -452,6 +462,15 @@ const DeviceManagementPage: React.FC<{ devices: Device[]; setDevices: React.Disp
                                 <tr key={device.id}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{device.id}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{device.locationName}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <div className="flex items-center">
+                                            {device.wasteType === 'Wet' ? 
+                                                <DropletIcon className="w-4 h-4 mr-2 text-blue-500" /> : 
+                                                <SunIcon className="w-4 h-4 mr-2 text-yellow-500" />
+                                            }
+                                            <span>{device.wasteType}</span>
+                                        </div>
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusStyles[device.status]}`}>
                                             {device.status}
