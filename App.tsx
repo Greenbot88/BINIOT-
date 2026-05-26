@@ -9,6 +9,26 @@ import {
 
 declare const mqtt: any; 
 
+// --- Helpers ---
+const formatRelativeTime = (isoString: string): string => {
+    if (!isoString) return 'Never';
+    const date = new Date(isoString);
+    const now = new Date();
+    const seconds = Math.round((now.getTime() - date.getTime()) / 1000);
+
+    if (seconds < 5) return "Just now";
+    if (seconds < 60) return `${seconds} seconds ago`;
+    
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+
+    const days = Math.round(hours / 24);
+    return `${days} day${days > 1 ? 's' : ''} ago`;
+};
+
 // --- Types ---
 type View = 'dashboard' | 'deviceManagement' | 'users' | 'settings' | 'maps' | 'analytics' | 'help' | 'ruleEngine' | 'mqtt' | 'deviceLog';
 
@@ -30,10 +50,12 @@ interface Device {
   warningLevel: number;
   criticalLevel: number;
   batteryLevel: number;
-  status: 'Operational' | 'Warning' | 'Critical';
+  status: 'Operational' | 'Warning' | 'Critical' | 'Offline';
   wasteType: 'Wet' | 'Dry';
   fillLevel: number;
   lastEmptied: string;
+  lastSeen: string;
+  dateAdded: string;
   coords?: [number, number];
 }
 
@@ -90,10 +112,10 @@ const VIEW_CONFIGS: Record<View, ViewConfig> = {
 };
 
 const initialDevices: Device[] = [
-    { id: 'SB-101', model: 'EcoBin-100', firmwareVersion: 'v1.2.3', locationName: 'Cafeteria', building: 'Building A', floor: '1', zone: 'A', connectionType: 'wifi', networkName: 'Office_WiFi', warningLevel: 70, criticalLevel: 85, batteryLevel: 95, status: 'Operational', wasteType: 'Wet', fillLevel: 42, lastEmptied: '4 hours ago', coords: [51.51, -0.1] },
-    { id: 'SB-102', model: 'SmartBin-200', firmwareVersion: 'v2.0.1', locationName: 'Main Entrance', building: 'Building A', floor: 'G', zone: 'Lobby', connectionType: 'cellular', networkName: 'IoT_Network', warningLevel: 75, criticalLevel: 90, batteryLevel: 45, status: 'Warning', wasteType: 'Dry', fillLevel: 78, lastEmptied: '1 day ago', coords: [51.505, -0.09] },
-    { id: 'SB-103', model: 'IoT-Waste-300', firmwareVersion: 'v3.1.0', locationName: 'Floor 2, West Wing', building: 'Building B', floor: '2', zone: 'C', connectionType: 'ethernet', networkName: 'CorpNet', warningLevel: 80, criticalLevel: 95, batteryLevel: 15, status: 'Critical', wasteType: 'Dry', fillLevel: 95, lastEmptied: '2 days ago', coords: [51.515, -0.12] },
-    { id: 'SB-104', model: 'EcoBin-100', firmwareVersion: 'v1.2.5', locationName: 'Parking P1', building: 'Building A', floor: 'P1', zone: 'A', connectionType: 'wifi', networkName: 'Office_WiFi', warningLevel: 70, criticalLevel: 85, batteryLevel: 88, status: 'Operational', wasteType: 'Dry', fillLevel: 35, lastEmptied: '8 hours ago', coords: [51.52, -0.11] },
+    { id: 'SB-101', model: 'EcoBin-100', firmwareVersion: 'v1.2.3', locationName: 'Cafeteria', building: 'Building A', floor: '1', zone: 'A', connectionType: 'wifi', networkName: 'Office_WiFi', warningLevel: 70, criticalLevel: 85, batteryLevel: 95, status: 'Operational', wasteType: 'Wet', fillLevel: 42, lastEmptied: '4 hours ago', lastSeen: new Date().toISOString(), dateAdded: new Date('2023-01-15T09:00:00Z').toISOString(), coords: [51.51, -0.1] },
+    { id: 'SB-102', model: 'SmartBin-200', firmwareVersion: 'v2.0.1', locationName: 'Main Entrance', building: 'Building A', floor: 'G', zone: 'Lobby', connectionType: 'cellular', networkName: 'IoT_Network', warningLevel: 75, criticalLevel: 90, batteryLevel: 45, status: 'Warning', wasteType: 'Dry', fillLevel: 78, lastEmptied: '1 day ago', lastSeen: new Date().toISOString(), dateAdded: new Date('2023-01-20T11:30:00Z').toISOString(), coords: [51.505, -0.09] },
+    { id: 'SB-103', model: 'IoT-Waste-300', firmwareVersion: 'v3.1.0', locationName: 'Floor 2, West Wing', building: 'Building B', floor: '2', zone: 'C', connectionType: 'ethernet', networkName: 'CorpNet', warningLevel: 80, criticalLevel: 95, batteryLevel: 15, status: 'Critical', wasteType: 'Dry', fillLevel: 95, lastEmptied: '2 days ago', lastSeen: new Date().toISOString(), dateAdded: new Date('2023-02-01T16:45:00Z').toISOString(), coords: [51.515, -0.12] },
+    { id: 'SB-104', model: 'EcoBin-100', firmwareVersion: 'v1.2.5', locationName: 'Parking P1', building: 'Building A', floor: 'P1', zone: 'A', connectionType: 'wifi', networkName: 'Office_WiFi', warningLevel: 70, criticalLevel: 85, batteryLevel: 88, status: 'Operational', wasteType: 'Dry', fillLevel: 35, lastEmptied: '8 hours ago', lastSeen: new Date().toISOString(), dateAdded: new Date('2023-02-05T08:20:00Z').toISOString(), coords: [51.52, -0.11] },
 ];
 
 // --- Components ---
@@ -242,7 +264,7 @@ const AddDevicePage: React.FC<{ onCancel: () => void; onSave: (device: Device) =
         if (!formRef.current) return;
         const formData = new FormData(formRef.current);
         const newDevice: Device = {
-            id: deviceToEdit?.id || `SB-${Math.floor(Math.random() * 1000)}`, // Generate ID if new
+            id: isEditing ? deviceToEdit.id : formData.get('device-id') as string,
             model: formData.get('device-model') as string,
             firmwareVersion: formData.get('firmware-version') as string,
             locationName: formData.get('location-name') as string,
@@ -258,6 +280,8 @@ const AddDevicePage: React.FC<{ onCancel: () => void; onSave: (device: Device) =
             status: deviceToEdit?.status || 'Operational', // Preserve status or default
             fillLevel: deviceToEdit?.fillLevel || 0,
             lastEmptied: deviceToEdit?.lastEmptied || 'Never',
+            lastSeen: deviceToEdit?.lastSeen || new Date().toISOString(),
+            dateAdded: deviceToEdit?.dateAdded || new Date().toISOString(),
         };
         onSave(newDevice);
     };
@@ -281,11 +305,11 @@ const AddDevicePage: React.FC<{ onCancel: () => void; onSave: (device: Device) =
                         <h3 className="text-lg font-semibold text-gray-800 border-b pb-2">Device Information</h3>
                         <div>
                             <label htmlFor="device-id" className={labelClasses}>Device ID</label>
-                            <input type="text" id="device-id" name="device-id" className={`${inputClasses} bg-gray-100`} placeholder="SB-XXX" defaultValue={deviceToEdit?.id} disabled={isEditing} />
+                            <input type="text" id="device-id" name="device-id" className={`${inputClasses} ${isEditing ? 'bg-gray-100' : ''}`} placeholder="e.g., SB-105" defaultValue={deviceToEdit?.id} disabled={isEditing} required={!isEditing} />
                         </div>
                         <div>
                             <label htmlFor="device-model" className={labelClasses}>Model</label>
-                            <select id="device-model" name="device-model" className={inputClasses} defaultValue={deviceToEdit?.model}>
+                            <select id="device-model" name="device-model" className={inputClasses} defaultValue={deviceToEdit?.model} required>
                                 <option value="">Select model</option>
                                 <option value="EcoBin-100">EcoBin-100</option>
                                 <option value="SmartBin-200">SmartBin-200</option>
@@ -308,7 +332,7 @@ const AddDevicePage: React.FC<{ onCancel: () => void; onSave: (device: Device) =
                         <h3 className="text-lg font-semibold text-gray-800 border-b pb-2">Location Information</h3>
                         <div>
                             <label htmlFor="location-name" className={labelClasses}>Location Name</label>
-                            <input type="text" id="location-name" name="location-name" className={inputClasses} placeholder="e.g., Cafeteria" defaultValue={deviceToEdit?.locationName} />
+                            <input type="text" id="location-name" name="location-name" className={inputClasses} placeholder="e.g., Cafeteria" defaultValue={deviceToEdit?.locationName} required/>
                         </div>
                         <div>
                             <label htmlFor="building" className={labelClasses}>Building/Area</label>
@@ -427,10 +451,11 @@ const DeviceManagementPage: React.FC<{ devices: Device[]; setDevices: React.Disp
         return <AddDevicePage onCancel={() => setIsFormVisible(false)} onSave={handleSaveDevice} deviceToEdit={deviceToEdit} />;
     }
 
-    const statusStyles = {
+    const statusStyles: Record<Device['status'], string> = {
         Critical: 'bg-red-100 text-red-800',
         Warning: 'bg-orange-100 text-orange-800',
-        Operational: 'bg-green-100 text-green-800'
+        Operational: 'bg-green-100 text-green-800',
+        Offline: 'bg-gray-200 text-gray-800'
     };
 
     return (
@@ -449,9 +474,10 @@ const DeviceManagementPage: React.FC<{ devices: Device[]; setDevices: React.Disp
                         <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Device ID</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waste Type</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Added</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Battery</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Seen</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
@@ -462,15 +488,7 @@ const DeviceManagementPage: React.FC<{ devices: Device[]; setDevices: React.Disp
                                 <tr key={device.id}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{device.id}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{device.locationName}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        <div className="flex items-center">
-                                            {device.wasteType === 'Wet' ? 
-                                                <DropletIcon className="w-4 h-4 mr-2 text-blue-500" /> : 
-                                                <SunIcon className="w-4 h-4 mr-2 text-yellow-500" />
-                                            }
-                                            <span>{device.wasteType}</span>
-                                        </div>
-                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(device.dateAdded).toLocaleDateString()}</td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusStyles[device.status]}`}>
                                             {device.status}
@@ -482,6 +500,7 @@ const DeviceManagementPage: React.FC<{ devices: Device[]; setDevices: React.Disp
                                             <span>{device.batteryLevel}%</span>
                                         </div>
                                     </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatRelativeTime(device.lastSeen)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                         <button onClick={() => handleEdit(device)} className="text-amber-600 hover:text-amber-900 mr-4"><EditIcon className="w-4 h-4" /></button>
                                         <button onClick={() => handleDeleteRequest(device)} className="text-red-600 hover:text-red-900"><TrashIcon className="w-4 h-4" /></button>
@@ -751,10 +770,11 @@ const BinMarker: React.FC<{
     const markerRef = useRef<HTMLDivElement>(null);
 
     const status = device?.status || 'Operational';
-    const statusStyles = {
+    const statusStyles: Record<Device['status'], { outer: string; inner: string }> = {
         Critical: { outer: 'bg-red-500', inner: 'bg-red-300' },
         Warning: { outer: 'bg-orange-500', inner: 'bg-orange-300' },
-        Operational: { outer: 'bg-green-500', inner: 'bg-green-300' }
+        Operational: { outer: 'bg-green-500', inner: 'bg-green-300' },
+        Offline: { outer: 'bg-gray-500', inner: 'bg-gray-300' }
     };
     const style = statusStyles[status];
 
@@ -1016,6 +1036,7 @@ const FloorMapsPage: React.FC<{ devices: Device[] }> = ({ devices }) => {
                     <div className="flex items-center space-x-2"><div className="w-4 h-4 rounded-full bg-green-500"></div><span className="text-sm text-gray-600">Operational</span></div>
                     <div className="flex items-center space-x-2"><div className="w-4 h-4 rounded-full bg-orange-500"></div><span className="text-sm text-gray-600">Warning</span></div>
                     <div className="flex items-center space-x-2"><div className="w-4 h-4 rounded-full bg-red-500"></div><span className="text-sm text-gray-600">Critical</span></div>
+                    <div className="flex items-center space-x-2"><div className="w-4 h-4 rounded-full bg-gray-500"></div><span className="text-sm text-gray-600">Offline</span></div>
                 </div>
             </div>
         </div>
@@ -1144,11 +1165,19 @@ interface LogEntry {
     timestamp: string;
     topic: string;
     payload: string;
-    source: string;
+    source: 'MQTT Broker' | 'System';
 }
 
 const DeviceLogPage: React.FC = () => {
-    const [logs, setLogs] = useState<LogEntry[]>([]);
+    const [logs, setLogs] = useState<LogEntry[]>(() => {
+        try {
+            const savedLogs = localStorage.getItem('smartBinDeviceLogs');
+            return savedLogs ? JSON.parse(savedLogs) : [];
+        } catch (e) {
+            console.error("Failed to load logs from localStorage", e);
+            return [];
+        }
+    });
     const [isLogging, setIsLogging] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'Disconnected' | 'Connecting...' | 'Connected' | 'Error'>('Disconnected');
     const clientRef = useRef<any | null>(null);
@@ -1159,12 +1188,31 @@ const DeviceLogPage: React.FC = () => {
             logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
         }
     };
+    
+    useEffect(() => {
+        scrollToBottom();
+    }, [logs]);
 
-    useEffect(scrollToBottom, [logs]);
+    useEffect(() => {
+        try {
+            localStorage.setItem('smartBinDeviceLogs', JSON.stringify(logs));
+        } catch (e) {
+            console.error("Failed to save logs to localStorage", e);
+        }
+    }, [logs]);
+
+    const addLog = (log: Omit<LogEntry, 'timestamp'>) => {
+        const newLog: LogEntry = {
+            ...log,
+            timestamp: new Date().toISOString(),
+        };
+        setLogs(prevLogs => [...prevLogs.slice(-200), newLog]);
+    };
 
     const startLogging = () => {
         if (clientRef.current || isLogging) return;
         
+        addLog({ source: 'System', topic: 'Control', payload: '--- Starting logger and attempting connection... ---' });
         setIsLogging(true);
         setConnectionStatus('Connecting...');
 
@@ -1173,38 +1221,35 @@ const DeviceLogPage: React.FC = () => {
 
         client.on('connect', () => {
             setConnectionStatus('Connected');
-            // Subscribe to the telemetry topic for all smart bins
+            addLog({ source: 'System', topic: 'Connection', payload: '--- Connection successful. Subscribing to telemetry topic... ---' });
             client.subscribe('fernhill/bins/+/telemetry', (err: Error) => {
                 if (err) {
                     console.error('Subscription error:', err);
                     setConnectionStatus('Error');
+                    addLog({ source: 'System', topic: 'Error', payload: `--- Subscription failed: ${err.message} ---` });
                     client.end();
+                } else {
+                    addLog({ source: 'System', topic: 'Connection', payload: '--- Subscription successful. Listening for data. ---' });
                 }
             });
         });
 
         client.on('message', (topic: string, message: Uint8Array) => {
             const payload = new TextDecoder("utf-8").decode(message);
-            const newLog: LogEntry = {
-                timestamp: new Date().toISOString(),
-                topic,
-                payload,
-                source: 'MQTT Broker',
-            };
-            setLogs(prevLogs => [...prevLogs.slice(-200), newLog]); // Keep last 200 logs
+            addLog({ source: 'MQTT Broker', topic, payload });
         });
         
         client.on('error', (err: Error) => {
             console.error('MQTT Connection Error:', err);
             setConnectionStatus('Error');
-            client.end();
-            clientRef.current = null;
-            setIsLogging(false);
+            addLog({ source: 'System', topic: 'Error', payload: `--- Connection error: ${err.message} ---` });
+            if (clientRef.current) clientRef.current.end();
         });
 
         client.on('close', () => {
             if (isLogging) { 
                 setConnectionStatus('Disconnected');
+                addLog({ source: 'System', topic: 'Connection', payload: '--- Connection closed. ---' });
             }
             clientRef.current = null;
             setIsLogging(false);
@@ -1212,6 +1257,7 @@ const DeviceLogPage: React.FC = () => {
     };
     
     const stopLogging = () => {
+        addLog({ source: 'System', topic: 'Control', payload: '--- Logging stopped by user. ---' });
         if (clientRef.current) {
             clientRef.current.end();
         }
@@ -1221,9 +1267,9 @@ const DeviceLogPage: React.FC = () => {
 
     const clearLogs = () => {
         setLogs([]);
+        localStorage.removeItem('smartBinDeviceLogs');
     };
     
-    // Cleanup on component unmount
     useEffect(() => {
         return () => {
             if (clientRef.current) {
@@ -1237,6 +1283,26 @@ const DeviceLogPage: React.FC = () => {
         'Connecting...': 'bg-yellow-200 text-yellow-800 animate-pulse',
         'Connected': 'bg-green-200 text-green-800',
         'Error': 'bg-red-200 text-red-800'
+    };
+
+    const LogLine: React.FC<{ log: LogEntry }> = ({ log }) => {
+        if (log.source === 'System') {
+            return (
+                 <div className="flex flex-wrap items-start mb-2">
+                    <span className="text-cyan-400 mr-4 whitespace-nowrap">{log.timestamp}</span>
+                    <span className="text-purple-400 mr-4 whitespace-nowrap">[{log.topic}]</span>
+                    <span className="text-gray-300 flex-1 whitespace-pre-wrap break-all">{log.payload}</span>
+                </div>
+            );
+        }
+        return (
+            <div className="flex flex-wrap items-start mb-2">
+                <span className="text-cyan-400 mr-4 whitespace-nowrap">{log.timestamp}</span>
+                <span className="text-green-400 mr-4 whitespace-nowrap">[{log.source}]</span>
+                <span className="text-amber-400 mr-4 whitespace-nowrap">[{log.topic}]</span>
+                <span className="text-gray-200 flex-1 whitespace-pre-wrap break-all">{log.payload}</span>
+            </div>
+        );
     };
 
     return (
@@ -1262,16 +1328,9 @@ const DeviceLogPage: React.FC = () => {
 
             <div ref={logContainerRef} className="flex-grow bg-gray-900 text-white font-mono text-sm p-4 rounded-lg overflow-y-auto">
                 {logs.length === 0 ? (
-                    <p className="text-gray-400">Waiting for data... Start logging to see device telemetry.</p>
+                    <p className="text-gray-400">Log is empty. Start logging to see device telemetry.</p>
                 ) : (
-                    logs.map((log, index) => (
-                        <div key={index} className="flex flex-wrap items-start mb-2">
-                            <span className="text-cyan-400 mr-4 whitespace-nowrap">{log.timestamp}</span>
-                            <span className="text-green-400 mr-4 whitespace-nowrap">[{log.source}]</span>
-                            <span className="text-amber-400 mr-4 whitespace-nowrap">[{log.topic}]</span>
-                            <span className="text-gray-200 flex-1 whitespace-pre-wrap break-all">{log.payload}</span>
-                        </div>
-                    ))
+                    logs.map((log, index) => <LogLine key={index} log={log} />)
                 )}
             </div>
         </div>
@@ -1323,7 +1382,31 @@ const App = () => {
             return currentNotifications;
         });
     };
+    
+    // Effect for checking offline status
+    useEffect(() => {
+        const OFFLINE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+        const intervalId = setInterval(() => {
+            setDevices(prevDevices =>
+                prevDevices.map(device => {
+                    if (device.status === 'Offline') return device; // Already offline, MQTT will bring it back
+                    const lastSeenDate = new Date(device.lastSeen);
+                    const now = new Date();
+                    const isOffline = (now.getTime() - lastSeenDate.getTime()) > OFFLINE_TIMEOUT_MS;
+
+                    if (isOffline) {
+                        return { ...device, status: 'Offline' };
+                    }
+                    return device;
+                })
+            );
+        }, 30000); // Check every 30 seconds
+
+        return () => clearInterval(intervalId);
+    }, []);
+
+    // Effect for MQTT connection
     useEffect(() => {
         const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
 
@@ -1353,12 +1436,13 @@ const App = () => {
 
                             const newFillLevel = telemetry.fillLevel ?? d.fillLevel;
                             const newBatteryLevel = telemetry.batteryLevel ?? d.batteryLevel;
+                            const newCoords = telemetry.coords ?? d.coords;
                             
                             let newStatus: 'Operational' | 'Warning' | 'Critical' = 'Operational';
                             if (newFillLevel >= d.criticalLevel) newStatus = 'Critical';
                             else if (newFillLevel >= d.warningLevel) newStatus = 'Warning';
 
-                            targetDevice = { ...d, fillLevel: newFillLevel, batteryLevel: newBatteryLevel, status: newStatus };
+                            targetDevice = { ...d, fillLevel: newFillLevel, batteryLevel: newBatteryLevel, status: newStatus, coords: newCoords, lastSeen: new Date().toISOString() };
                             return targetDevice;
                         });
 

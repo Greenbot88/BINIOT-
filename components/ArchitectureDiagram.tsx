@@ -1,9 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trash2Icon, CheckCircleIcon, AlertCircleIcon, AlertTriangleIcon, SearchIcon, EditIcon, TrashIcon, XIcon, BatteryIcon, DropletIcon, SunIcon } from './Icons';
+import { Trash2Icon, CheckCircleIcon, AlertCircleIcon, AlertTriangleIcon, SearchIcon, EditIcon, TrashIcon, XIcon, BatteryIcon, DropletIcon, SunIcon, SlashIcon } from './Icons';
 
 // TypeScript declarations for CDN libraries
 declare const L: any;
 declare const Chart: any;
+
+// --- HELPERS ---
+const formatRelativeTime = (isoString: string): string => {
+    if (!isoString) return 'Never';
+    const date = new Date(isoString);
+    const now = new Date();
+    const seconds = Math.round((now.getTime() - date.getTime()) / 1000);
+
+    if (seconds < 5) return "Just now";
+    if (seconds < 60) return `${seconds} seconds ago`;
+    
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+
+    const days = Math.round(hours / 24);
+    return `${days} day${days > 1 ? 's' : ''} ago`;
+};
 
 // --- TYPE DEFINITIONS ---
 // This type must be kept in sync with the one in App.tsx
@@ -20,10 +40,12 @@ interface Device {
   warningLevel: number;
   criticalLevel: number;
   batteryLevel: number;
-  status: 'Operational' | 'Warning' | 'Critical';
+  status: 'Operational' | 'Warning' | 'Critical' | 'Offline';
   wasteType: 'Wet' | 'Dry';
   fillLevel: number;
   lastEmptied: string;
+  lastSeen: string;
+  dateAdded: string;
   coords?: [number, number];
 }
 
@@ -31,8 +53,9 @@ interface Device {
 const STATUS_CONFIG_BASE = {
   Total: { icon: <Trash2Icon className="w-5 h-5"/>, color: 'gray' },
   Operational: { icon: <CheckCircleIcon className="w-5 h-5"/>, color: 'green' },
-  'Needs Attention': { icon: <AlertCircleIcon className="w-5 h-5"/>, color: 'orange' },
+  Warning: { icon: <AlertCircleIcon className="w-5 h-5"/>, color: 'orange' },
   Critical: { icon: <AlertTriangleIcon className="w-5 h-5"/>, color: 'red' },
+  Offline: { icon: <SlashIcon className="w-5 h-5"/>, color: 'slate' }
 };
 
 const getBatteryStyle = (level: number) => {
@@ -52,6 +75,7 @@ const StatusCard: React.FC<{ title: string; count: number }> = ({ title, count }
         green: { bg: 'bg-green-50', border: 'border-green-100', text: 'text-green-800', iconBg: 'bg-green-100', iconText: 'text-green-600' },
         orange: { bg: 'bg-orange-50', border: 'border-orange-100', text: 'text-orange-800', iconBg: 'bg-orange-100', iconText: 'text-orange-600' },
         red: { bg: 'bg-red-50', border: 'border-red-100', text: 'text-red-800', iconBg: 'bg-red-100', iconText: 'text-red-600' },
+        slate: { bg: 'bg-slate-100', border: 'border-slate-200', text: 'text-slate-800', iconBg: 'bg-slate-200', iconText: 'text-slate-600' },
     };
     const C = colors[config.color as keyof typeof colors];
 
@@ -75,11 +99,13 @@ const BinTableRow: React.FC<{ device: Device; onRowClick: (device: Device) => vo
         Critical: 'bg-red-100 text-red-800',
         Warning: 'bg-orange-100 text-orange-800',
         Operational: 'bg-green-100 text-green-800',
+        Offline: 'bg-gray-200 text-gray-800'
     };
     const progressStyles: Record<Device['status'], string> = {
         Critical: 'bg-red-500',
         Warning: 'bg-orange-500',
         Operational: 'bg-green-500',
+        Offline: 'bg-gray-400'
     };
     const batteryStyle = getBatteryStyle(device.batteryLevel);
 
@@ -96,15 +122,6 @@ const BinTableRow: React.FC<{ device: Device; onRowClick: (device: Device) => vo
                 </div>
             </td>
             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{device.locationName}</td>
-            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                <div className="flex items-center">
-                    {device.wasteType === 'Wet' ? 
-                        <DropletIcon className="w-5 h-5 mr-2 text-blue-500" /> : 
-                        <SunIcon className="w-5 h-5 mr-2 text-yellow-500" />
-                    }
-                    <span>{device.wasteType}</span>
-                </div>
-            </td>
             <td className="px-6 py-4 whitespace-nowrap">
                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusStyles[device.status]}`}>
                     {device.status}
@@ -117,16 +134,16 @@ const BinTableRow: React.FC<{ device: Device; onRowClick: (device: Device) => vo
                             <div className={`h-full rounded-full ${progressStyles[device.status]}`} style={{ width: `${device.fillLevel}%` }}></div>
                         </div>
                     </div>
-                    <span className="ml-2 text-sm text-gray-500">{device.fillLevel}%</span>
+                    <span className="ml-2 text-sm text-gray-500">{device.status === 'Offline' ? '??%' : `${device.fillLevel}%`}</span>
                 </div>
             </td>
             <td className="px-6 py-4 whitespace-nowrap text-sm">
                 <div className={`flex items-center ${batteryStyle.color}`}>
                     <BatteryIcon className="w-4 h-4 mr-2" />
-                    <span>{device.batteryLevel}%</span>
+                    <span>{device.status === 'Offline' ? '??%' : `${device.batteryLevel}%`}</span>
                 </div>
             </td>
-            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{device.lastEmptied}</td>
+            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatRelativeTime(device.lastSeen)}</td>
             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                 <button className="text-amber-600 hover:text-amber-900 mr-4" onClick={(e) => { e.stopPropagation(); alert(`Editing ${device.id}`); }}>
                     <EditIcon className="w-4 h-4" />
@@ -155,8 +172,10 @@ const Charts: React.FC<{devices: Device[]}> = ({ devices }) => {
             const opCount = devices.filter(b => b.status === 'Operational').length;
             const warnCount = devices.filter(b => b.status === 'Warning').length;
             const critCount = devices.filter(b => b.status === 'Critical').length;
+            const offlineCount = devices.filter(b => b.status === 'Offline').length;
+
             statusChart = new Chart(statusChartRef.current, {
-                type: 'doughnut', data: { labels: ['Operational', 'Warning', 'Critical'], datasets: [{ data: [opCount, warnCount, critCount], backgroundColor: ['#22c55e', '#f97316', '#ef4444'], borderWidth: 0 }] },
+                type: 'doughnut', data: { labels: ['Operational', 'Warning', 'Critical', 'Offline'], datasets: [{ data: [opCount, warnCount, critCount, offlineCount], backgroundColor: ['#22c55e', '#f97316', '#ef4444', '#6b7280'], borderWidth: 0 }] },
                 options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom' } } }
             });
         }
@@ -197,16 +216,27 @@ const Map: React.FC<{ devices: Device[], onMarkerClick: (device: Device) => void
         markers.current.forEach(marker => marker.remove());
         markers.current = [];
 
-        const binIcon = L.icon({
-            iconUrl: 'https://cdn-icons-png.flaticon.com/512/484/484613.png',
-            iconSize: [32, 32],
-            iconAnchor: [16, 32],
-            popupAnchor: [0, -32]
-        });
+        const getIcon = (status: Device['status']) => {
+            let color = '#22c55e'; // green for Operational
+            if (status === 'Warning') color = '#f97316'; // orange
+            if (status === 'Critical') color = '#ef4444'; // red
+            if (status === 'Offline') color = '#6b7280'; // gray
+
+            return L.divIcon({
+                className: 'map-marker',
+                html: `
+                    <img src="https://cdn-icons-png.flaticon.com/512/484/484613.png" class="map-marker-icon" />
+                    <div class="map-marker-status" style="background-color: ${color};"></div>
+                `,
+                iconSize: [32, 32],
+                iconAnchor: [16, 32],
+                popupAnchor: [0, -32]
+            });
+        };
 
         devices.forEach(device => {
             if (device.coords) {
-                const marker = L.marker(device.coords, { icon: binIcon }).addTo(mapInstance.current)
+                const marker = L.marker(device.coords, { icon: getIcon(device.status) }).addTo(mapInstance.current)
                     .bindPopup(`<b>${device.id}</b><br>Status: ${device.status}`);
                 marker.on('click', () => onMarkerClick(device));
                 markers.current.push(marker);
@@ -217,6 +247,20 @@ const Map: React.FC<{ devices: Device[], onMarkerClick: (device: Device) => void
     
     return (
          <div className="bg-white rounded-lg shadow p-4">
+            <style>{`
+                .map-marker { position: relative; }
+                .map-marker-icon { width: 32px; height: 32px; }
+                .map-marker-status {
+                    position: absolute;
+                    top: 0px;
+                    right: 0px;
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 50%;
+                    border: 2px solid white;
+                    box-shadow: 0 0 3px rgba(0,0,0,0.5);
+                }
+            `}</style>
             <h2 className="text-lg font-semibold mb-4 text-gray-800">Bin Locations</h2>
             <div id="map" ref={mapRef} className="h-[400px] rounded-lg"></div>
         </div>
@@ -257,16 +301,20 @@ const BinDetailsModal: React.FC<{ device: Device | null; onClose: () => void; on
                            <h4 className="font-semibold mb-2 text-gray-700">Current Status</h4>
                             <div className="space-y-2">
                                 <div>
+                                    <label className="text-sm text-gray-500">Status</label>
+                                    <p className="font-medium text-gray-800">{device.status}</p>
+                                </div>
+                                <div>
                                     <label className="text-sm text-gray-500">Fill Level</label>
-                                    <p className="font-medium text-gray-800">{device.fillLevel}%</p>
+                                    <p className="font-medium text-gray-800">{device.status === 'Offline' ? 'Unknown' : `${device.fillLevel}%`}</p>
                                 </div>
                                  <div>
                                     <label className="text-sm text-gray-500">Battery</label>
-                                    <p className="font-medium text-gray-800">{device.batteryLevel}%</p>
+                                    <p className="font-medium text-gray-800">{device.status === 'Offline' ? 'Unknown' : `${device.batteryLevel}%`}</p>
                                 </div>
                                 <div>
-                                    <label className="text-sm text-gray-500">Status</label>
-                                    <p className="font-medium text-gray-800">{device.status}</p>
+                                    <label className="text-sm text-gray-500">Last Seen</label>
+                                    <p className="font-medium text-gray-800">{formatRelativeTime(device.lastSeen)}</p>
                                 </div>
                             </div>
                         </div>
@@ -376,8 +424,9 @@ const SmartBinDashboard: React.FC<{ devices: Device[]; setDevices: React.Dispatc
     const statusCounts = {
         Total: filteredDevices.length,
         Operational: filteredDevices.filter(b => b.status === 'Operational').length,
-        'Needs Attention': filteredDevices.filter(b => b.status === 'Warning').length,
+        Warning: filteredDevices.filter(b => b.status === 'Warning').length,
         Critical: filteredDevices.filter(b => b.status === 'Critical').length,
+        Offline: filteredDevices.filter(b => b.status === 'Offline').length,
     };
     
     return (
@@ -393,11 +442,12 @@ const SmartBinDashboard: React.FC<{ devices: Device[]; setDevices: React.Dispatc
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
                     <StatusCard title="Total" count={statusCounts.Total}/>
                     <StatusCard title="Operational" count={statusCounts.Operational}/>
-                    <StatusCard title="Needs Attention" count={statusCounts['Needs Attention']}/>
+                    <StatusCard title="Warning" count={statusCounts.Warning}/>
                     <StatusCard title="Critical" count={statusCounts.Critical}/>
+                    <StatusCard title="Offline" count={statusCounts.Offline}/>
                 </div>
                 
                 <div className="overflow-x-auto">
@@ -406,11 +456,10 @@ const SmartBinDashboard: React.FC<{ devices: Device[]; setDevices: React.Dispatc
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bin ID</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waste Type</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fill Level</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Battery</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Emptied</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Seen</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
